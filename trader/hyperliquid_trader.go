@@ -334,7 +334,7 @@ func (t *HyperliquidTrader) OpenShort(symbol string, quantity float64, leverage 
 }
 
 // CloseLong 平多仓
-func (t *HyperliquidTrader) CloseLong(symbol string, quantity float64) (map[string]interface{}, error) {
+func (t *HyperliquidTrader) CloseLong(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error) {
 	// 如果数量为0，获取当前持仓数量
 	if quantity == 0 {
 		positions, err := t.GetPositions()
@@ -392,9 +392,12 @@ func (t *HyperliquidTrader) CloseLong(symbol string, quantity float64) (map[stri
 
 	log.Printf("✓ 平多仓成功: %s 数量: %.4f", symbol, roundedQuantity)
 
-	// 平仓后取消该币种的所有挂单
-	if err := t.CancelAllOrders(symbol); err != nil {
-		log.Printf("  ⚠ 取消挂单失败: %v", err)
+	// 全平才取消挂单
+	if !isPartial {
+		// 平仓后取消该币种的所有挂单（止损止盈单）
+		if err := t.CancelAllOrders(symbol); err != nil {
+			log.Printf("  ⚠ 取消挂单失败: %v", err)
+		}
 	}
 
 	result := make(map[string]interface{})
@@ -406,7 +409,7 @@ func (t *HyperliquidTrader) CloseLong(symbol string, quantity float64) (map[stri
 }
 
 // CloseShort 平空仓
-func (t *HyperliquidTrader) CloseShort(symbol string, quantity float64) (map[string]interface{}, error) {
+func (t *HyperliquidTrader) CloseShort(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error) {
 	// 如果数量为0，获取当前持仓数量
 	if quantity == 0 {
 		positions, err := t.GetPositions()
@@ -464,11 +467,13 @@ func (t *HyperliquidTrader) CloseShort(symbol string, quantity float64) (map[str
 
 	log.Printf("✓ 平空仓成功: %s 数量: %.4f", symbol, roundedQuantity)
 
-	// 平仓后取消该币种的所有挂单
-	if err := t.CancelAllOrders(symbol); err != nil {
-		log.Printf("  ⚠ 取消挂单失败: %v", err)
+	// 全平才取消挂单
+	if !isPartial {
+		// 平仓后取消该币种的所有挂单（止损止盈单）
+		if err := t.CancelAllOrders(symbol); err != nil {
+			log.Printf("  ⚠ 取消挂单失败: %v", err)
+		}
 	}
-
 	result := make(map[string]interface{})
 	result["orderId"] = 0
 	result["symbol"] = symbol
@@ -594,6 +599,40 @@ func (t *HyperliquidTrader) SetTakeProfit(symbol string, positionSide string, qu
 	}
 
 	log.Printf("  止盈价设置: %.4f", roundedTakeProfitPrice)
+	return nil
+}
+
+// CancelStopOrders 取消该币种的止盈/止损单（用于调整止盈止损位置）
+func (t *HyperliquidTrader) CancelStopOrders(symbol string, orderSide string) error {
+	coin := convertSymbolToHyperliquid(symbol)
+
+	// 获取所有挂单
+	openOrders, err := t.exchange.Info().OpenOrders(t.ctx, t.walletAddr)
+	if err != nil {
+		return fmt.Errorf("获取挂单失败: %w", err)
+	}
+
+	// 注意：Hyperliquid SDK 的 OpenOrder 结构不暴露 trigger 字段
+	// 因此暂时取消该币种的所有挂单（包括止盈止损单）
+	// 这是安全的，因为在设置新的止盈止损之前，应该清理所有旧订单
+	canceledCount := 0
+	for _, order := range openOrders {
+		if order.Coin == coin {
+			_, err := t.exchange.Cancel(t.ctx, coin, order.Oid)
+			if err != nil {
+				log.Printf("  ⚠ 取消订单失败 (oid=%d): %v", order.Oid, err)
+				continue
+			}
+			canceledCount++
+		}
+	}
+
+	if canceledCount == 0 {
+		log.Printf("  ℹ %s 没有挂单需要取消", symbol)
+	} else {
+		log.Printf("  ✓ 已取消 %s 的 %d 个挂单（包括止盈/止损单）", symbol, canceledCount)
+	}
+
 	return nil
 }
 

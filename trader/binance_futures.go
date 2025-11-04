@@ -27,15 +27,48 @@ type FuturesTrader struct {
 
 	// 缓存有效期（15秒）
 	cacheDuration time.Duration
+
+	// 服务器时间同步
+	timeSyncMutex    sync.Mutex
+	lastTimeSync     time.Time
+	timeSyncInterval time.Duration
 }
 
 // NewFuturesTrader 创建合约交易器
 func NewFuturesTrader(apiKey, secretKey string) *FuturesTrader {
-	client := futures.NewClient(apiKey, secretKey)
-	return &FuturesTrader{
-		client:        client,
-		cacheDuration: 15 * time.Second, // 15秒缓存
+	client := futures.NewProxiedClient(apiKey, secretKey, "http://127.0.0.1:8800")
+
+	trader := &FuturesTrader{
+		client:           client,
+		cacheDuration:    15 * time.Second, // 15秒缓存
+		timeSyncInterval: 30 * time.Second,
 	}
+
+	if err := trader.syncServerTime(context.Background(), true); err != nil {
+		log.Printf("⚠️ 初始化同步币安服务器时间失败: %v", err)
+	}
+
+	return trader
+}
+
+// syncServerTime 同步本地与币安服务器的时间偏移
+func (t *FuturesTrader) syncServerTime(ctx context.Context, force bool) error {
+	t.timeSyncMutex.Lock()
+	defer t.timeSyncMutex.Unlock()
+
+	if !force && !t.lastTimeSync.IsZero() && time.Since(t.lastTimeSync) < t.timeSyncInterval {
+		return nil
+	}
+
+	offset, err := t.client.NewSetServerTimeService().Do(ctx)
+	if err != nil {
+		return err
+	}
+
+	t.lastTimeSync = time.Now()
+	drift := time.Duration(offset) * time.Millisecond
+	log.Printf("✓ Binance服务器时间同步成功 (offset=%s)", drift)
+	return nil
 }
 
 // GetBalance 获取账户余额（带缓存）
@@ -304,7 +337,7 @@ func (t *FuturesTrader) OpenShort(symbol string, quantity float64, leverage int)
 }
 
 // CloseLong 平多仓
-func (t *FuturesTrader) CloseLong(symbol string, quantity float64) (map[string]interface{}, error) {
+func (t *FuturesTrader) CloseLong(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error) {
 	// 如果数量为0，获取当前持仓数量
 	if quantity == 0 {
 		positions, err := t.GetPositions()
@@ -345,9 +378,12 @@ func (t *FuturesTrader) CloseLong(symbol string, quantity float64) (map[string]i
 
 	log.Printf("✓ 平多仓成功: %s 数量: %s", symbol, quantityStr)
 
-	// 平仓后取消该币种的所有挂单（止损止盈单）
-	if err := t.CancelAllOrders(symbol); err != nil {
-		log.Printf("  ⚠ 取消挂单失败: %v", err)
+	// 全平才取消挂单
+	if !isPartial {
+		// 平仓后取消该币种的所有挂单（止损止盈单）
+		if err := t.CancelAllOrders(symbol); err != nil {
+			log.Printf("  ⚠ 取消挂单失败: %v", err)
+		}
 	}
 
 	result := make(map[string]interface{})
@@ -358,7 +394,7 @@ func (t *FuturesTrader) CloseLong(symbol string, quantity float64) (map[string]i
 }
 
 // CloseShort 平空仓
-func (t *FuturesTrader) CloseShort(symbol string, quantity float64) (map[string]interface{}, error) {
+func (t *FuturesTrader) CloseShort(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error) {
 	// 如果数量为0，获取当前持仓数量
 	if quantity == 0 {
 		positions, err := t.GetPositions()
@@ -399,9 +435,12 @@ func (t *FuturesTrader) CloseShort(symbol string, quantity float64) (map[string]
 
 	log.Printf("✓ 平空仓成功: %s 数量: %s", symbol, quantityStr)
 
-	// 平仓后取消该币种的所有挂单（止损止盈单）
-	if err := t.CancelAllOrders(symbol); err != nil {
-		log.Printf("  ⚠ 取消挂单失败: %v", err)
+	// 全平才取消挂单
+	if !isPartial {
+		// 平仓后取消该币种的所有挂单（止损止盈单）
+		if err := t.CancelAllOrders(symbol); err != nil {
+			log.Printf("  ⚠ 取消挂单失败: %v", err)
+		}
 	}
 
 	result := make(map[string]interface{})
@@ -525,6 +564,59 @@ func (t *FuturesTrader) SetTakeProfit(symbol string, positionSide string, quanti
 	}
 
 	log.Printf("  止盈价设置: %.4f", takeProfitPrice)
+	return nil
+}
+
+// CancelStopOrders 取消该币种的止盈/止损单（用于调整止盈止损位置）
+func (t *FuturesTrader) CancelStopOrders(symbol string, orderSide string) error {
+	// 获取该币种的所有未完成订单
+	orders, err := t.client.NewListOpenOrdersService().
+		Symbol(symbol).
+		Do(context.Background())
+
+	if err != nil {
+		return fmt.Errorf("获取未完成订单失败: %w", err)
+	}
+
+	// 过滤出止盈止损单并取消
+	canceledCount := 0
+	for _, order := range orders {
+		orderType := order.Type
+		isCanceled := false
+		if orderSide == "stop" {
+			if orderType == futures.OrderTypeStopMarket || orderType == futures.OrderTypeStop {
+				isCanceled = true
+			}
+		} else {
+			if orderType == futures.OrderTypeTakeProfitMarket || orderType == futures.OrderTypeTakeProfit {
+				isCanceled = true
+			}
+		}
+
+		// 只取消止损和止盈订单
+		if isCanceled {
+			_, err := t.client.NewCancelOrderService().
+				Symbol(symbol).
+				OrderID(order.OrderID).
+				Do(context.Background())
+
+			if err != nil {
+				log.Printf("  ⚠ 取消订单 %d 失败: %v", order.OrderID, err)
+				continue
+			}
+
+			canceledCount++
+			log.Printf("  ✓ 已取消 %s 的止盈/止损单 (订单ID: %d, 类型: %s)",
+				symbol, order.OrderID, orderType)
+		}
+	}
+
+	if canceledCount == 0 {
+		log.Printf("  ℹ %s 没有止盈/止损单需要取消", symbol)
+	} else {
+		log.Printf("  ✓ 已取消 %s 的 %d 个止盈/止损单", symbol, canceledCount)
+	}
+
 	return nil
 }
 

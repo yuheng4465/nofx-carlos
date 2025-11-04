@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -30,8 +32,14 @@ func NewCombinedStreamsClient(batchSize int) *CombinedStreamsClient {
 }
 
 func (c *CombinedStreamsClient) Connect() error {
+	proxy, err := url.Parse("http://127.0.0.1:8800")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
+		Proxy:            http.ProxyURL(proxy),
 	}
 
 	// 组合流使用不同的端点

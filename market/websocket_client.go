@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -77,8 +79,13 @@ func NewWSClient() *WSClient {
 }
 
 func (w *WSClient) Connect() error {
+	proxy, err := url.Parse("http://127.0.0.1:8800")
+	if err != nil {
+		log.Fatal(err)
+	}
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
+		Proxy:            http.ProxyURL(proxy),
 	}
 
 	conn, _, err := dialer.Dial("wss://ws-fapi.binance.com/ws-fapi/v1", nil)

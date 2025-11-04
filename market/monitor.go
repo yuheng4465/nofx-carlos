@@ -9,19 +9,29 @@ import (
 	"time"
 )
 
+const (
+	// MaxStreamsPerConnection Binance WebSocket 單連接最大訂閱流數限制
+	MaxStreamsPerConnection = 1024
+	// SafeMaxSymbols 安全的最大幣種數量（留 2.3% 緩衝空間）
+	// 250 個幣種 × 4 時間週期 = 1000 流 < 1024
+	SafeMaxSymbols = 250
+)
+
 type WSMonitor struct {
-	wsClient       *WSClient
-	combinedClient *CombinedStreamsClient
-	symbols        []string
-	featuresMap    sync.Map
-	alertsChan     chan Alert
-	klineDataMap3m sync.Map // 存储每个交易对的K线历史数据
-	klineDataMap4h sync.Map // 存储每个交易对的K线历史数据
-	tickerDataMap  sync.Map // 存储每个交易对的ticker数据
-	batchSize      int
-	filterSymbols  sync.Map // 使用sync.Map来存储需要监控的币种和其状态
-	symbolStats    sync.Map // 存储币种统计信息
-	FilterSymbol   []string //经过筛选的币种
+	wsClient        *WSClient
+	combinedClient  *CombinedStreamsClient
+	symbols         []string
+	featuresMap     sync.Map
+	alertsChan      chan Alert
+	klineDataMap3m  sync.Map // 存储每个交易对的K线历史数据
+	klineDataMap15m sync.Map // 存储每个交易对的15分钟K线历史数据
+	klineDataMap1h  sync.Map // 存储每个交易对的1小时K线历史数据
+	klineDataMap4h  sync.Map // 存储每个交易对的K线历史数据
+	tickerDataMap   sync.Map // 存储每个交易对的ticker数据
+	batchSize       int
+	filterSymbols   sync.Map // 使用sync.Map来存储需要监控的币种和其状态
+	symbolStats     sync.Map // 存储币种统计信息
+	FilterSymbol    []string //经过筛选的币种
 }
 type SymbolStats struct {
 	LastActiveTime   time.Time
@@ -32,7 +42,7 @@ type SymbolStats struct {
 }
 
 var WSMonitorCli *WSMonitor
-var subKlineTime = []string{"3m", "4h"} // 管理订阅流的K线周期
+var subKlineTime = []string{"3m", "15m", "1h", "4h"} // 管理订阅流的K线周期
 
 func NewWSMonitor(batchSize int) *WSMonitor {
 	WSMonitorCli = &WSMonitor{
@@ -67,6 +77,34 @@ func (m *WSMonitor) Initialize(coins []string) error {
 	}
 
 	log.Printf("找到 %d 个交易对", len(m.symbols))
+
+	// WebSocket 訂閱流數檢查與自動調整
+	totalStreams := len(m.symbols) * len(subKlineTime)
+
+	if len(m.symbols) > SafeMaxSymbols {
+		log.Printf("⚠️  幣種數量過多，自動調整:")
+		log.Printf("   - 原始數量: %d 個幣種 (%d 流)", len(m.symbols), totalStreams)
+		log.Printf("   - Binance 限制: %d 流/連接", MaxStreamsPerConnection)
+		log.Printf("   - 時間週期: %d (%v)", len(subKlineTime), subKlineTime)
+
+		// 調整到安全上限
+		m.symbols = m.symbols[:SafeMaxSymbols]
+		totalStreams = len(m.symbols) * len(subKlineTime)
+
+		log.Printf("   - 調整後: %d 個幣種 (%d 流)", len(m.symbols), totalStreams)
+		log.Printf("   - 已過濾: 前 %d 個幣種保留，其餘忽略", SafeMaxSymbols)
+	}
+
+	// 顯示訂閱使用率
+	usagePercent := float64(totalStreams) / float64(MaxStreamsPerConnection) * 100
+	log.Printf("✓ WebSocket 訂閱: %d 個幣種 × %d 時間週期 = %d 流 (%.1f%% 用量)",
+		len(m.symbols), len(subKlineTime), totalStreams, usagePercent)
+
+	// 接近上限警告（>90%）
+	if usagePercent > 90 {
+		log.Printf("⚠️  警告: 訂閱流使用率較高 (%.1f%%)，建議減少幣種數量以確保穩定性", usagePercent)
+	}
+
 	// 初始化历史数据
 	if err := m.initializeHistoricalData(); err != nil {
 		log.Printf("初始化历史数据失败: %v", err)
@@ -89,23 +127,37 @@ func (m *WSMonitor) initializeHistoricalData() error {
 			defer wg.Done()
 			defer func() { <-semaphore }()
 
-			// 获取历史K线数据
-			klines, err := apiClient.GetKlines(s, "3m", 100)
+			// 获取3分钟历史K线数据
+			klines3m, err := apiClient.GetKlines(s, "3m", 100)
 			if err != nil {
-				log.Printf("获取 %s 历史数据失败: %v", s, err)
-				return
+				log.Printf("获取 %s 3m历史数据失败: %v", s, err)
+			} else if len(klines3m) > 0 {
+				m.klineDataMap3m.Store(s, klines3m)
+				log.Printf("已加载 %s 的历史K线数据-3m: %d 条", s, len(klines3m))
 			}
-			if len(klines) > 0 {
-				m.klineDataMap3m.Store(s, klines)
-				log.Printf("已加载 %s 的历史K线数据-3m: %d 条", s, len(klines))
+
+			// 获取15分钟历史K线数据
+			klines15m, err := apiClient.GetKlines(s, "15m", 100)
+			if err != nil {
+				log.Printf("获取 %s 15m历史数据失败: %v", s, err)
+			} else if len(klines15m) > 0 {
+				m.klineDataMap15m.Store(s, klines15m)
+				log.Printf("已加载 %s 的历史K线数据-15m: %d 条", s, len(klines15m))
 			}
-			// 获取历史K线数据
+
+			// 获取1小时历史K线数据
+			klines1h, err := apiClient.GetKlines(s, "1h", 100)
+			if err != nil {
+				log.Printf("获取 %s 1h历史数据失败: %v", s, err)
+			} else if len(klines1h) > 0 {
+				m.klineDataMap1h.Store(s, klines1h)
+				log.Printf("已加载 %s 的历史K线数据-1h: %d 条", s, len(klines1h))
+			}
+			// 获取4小时历史K线数据
 			klines4h, err := apiClient.GetKlines(s, "4h", 100)
 			if err != nil {
-				log.Printf("获取 %s 历史数据失败: %v", s, err)
-				return
-			}
-			if len(klines4h) > 0 {
+				log.Printf("获取 %s 4h历史数据失败: %v", s, err)
+			} else if len(klines4h) > 0 {
 				m.klineDataMap4h.Store(s, klines4h)
 				log.Printf("已加载 %s 的历史K线数据-4h: %d 条", s, len(klines4h))
 			}
@@ -180,11 +232,16 @@ func (m *WSMonitor) handleKlineData(symbol string, ch <-chan []byte, _time strin
 
 func (m *WSMonitor) getKlineDataMap(_time string) *sync.Map {
 	var klineDataMap *sync.Map
-	if _time == "3m" {
+	switch _time {
+	case "3m":
 		klineDataMap = &m.klineDataMap3m
-	} else if _time == "4h" {
+	case "15m":
+		klineDataMap = &m.klineDataMap15m
+	case "1h":
+		klineDataMap = &m.klineDataMap1h
+	case "4h":
 		klineDataMap = &m.klineDataMap4h
-	} else {
+	default:
 		klineDataMap = &sync.Map{}
 	}
 	return klineDataMap
@@ -239,19 +296,31 @@ func (m *WSMonitor) GetCurrentKlines(symbol string, _time string) ([]Kline, erro
 		// 如果Ws数据未初始化完成时,单独使用api获取 - 兼容性代码 (防止在未初始化完成是,已经有交易员运行)
 		apiClient := NewAPIClient()
 		klines, err := apiClient.GetKlines(symbol, _time, 100)
-		m.getKlineDataMap(_time).Store(strings.ToUpper(symbol), klines) //动态缓存进缓存
+		if err != nil {
+			return nil, fmt.Errorf("获取%v分钟K线失败: %v", _time, err)
+		}
+
+		// 动态缓存进缓存
+		m.getKlineDataMap(_time).Store(strings.ToUpper(symbol), klines)
+
+		// 订阅 WebSocket 流
 		subStr := m.subscribeSymbol(symbol, _time)
 		subErr := m.combinedClient.subscribeStreams(subStr)
 		log.Printf("动态订阅流: %v", subStr)
 		if subErr != nil {
-			return nil, fmt.Errorf("动态订阅%v分钟K线失败: %v", _time, subErr)
+			log.Printf("警告: 动态订阅%v分钟K线失败: %v (使用API数据)", _time, subErr)
 		}
-		if err != nil {
-			return nil, fmt.Errorf("获取%v分钟K线失败: %v", _time, err)
-		}
-		return klines, fmt.Errorf("symbol不存在")
+		// ✅ FIX: 返回深拷贝而非引用
+		result := make([]Kline, len(klines))
+		copy(result, klines)
+		return result, nil
 	}
-	return value.([]Kline), nil
+
+	// ✅ FIX: 返回深拷贝而非引用，避免并发竞态条件
+	klines := value.([]Kline)
+	result := make([]Kline, len(klines))
+	copy(result, klines)
+	return result, nil
 }
 
 func (m *WSMonitor) Close() {

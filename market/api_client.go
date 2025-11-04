@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -19,9 +20,21 @@ type APIClient struct {
 }
 
 func NewAPIClient() *APIClient {
+	// 设置代理地址（例如：127.0.0.1:1080）
+	proxyURL, err := url.Parse("http://127.0.0.1:8800")
+	if err != nil {
+		log.Fatalf("解析代理地址失败: %v", err)
+	}
+
+	// 创建自定义 Transport 并设置代理
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+	}
+
 	return &APIClient{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		},
 	}
 }

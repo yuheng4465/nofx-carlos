@@ -16,10 +16,10 @@ type Trader interface {
 	OpenShort(symbol string, quantity float64, leverage int) (map[string]interface{}, error)
 
 	// CloseLong 平多仓（quantity=0表示全部平仓）
-	CloseLong(symbol string, quantity float64) (map[string]interface{}, error)
+	CloseLong(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error)
 
 	// CloseShort 平空仓（quantity=0表示全部平仓）
-	CloseShort(symbol string, quantity float64) (map[string]interface{}, error)
+	CloseShort(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error)
 
 	// SetLeverage 设置杠杆
 	SetLeverage(symbol string, leverage int) error
@@ -38,6 +38,9 @@ type Trader interface {
 
 	// CancelAllOrders 取消该币种的所有挂单
 	CancelAllOrders(symbol string) error
+
+	// CancelStopOrders 取消该币种的止盈/止损单（用于调整止盈止损位置）
+	CancelStopOrders(symbol string, orderSide string) error
 
 	// FormatQuantity 格式化数量到正确的精度
 	FormatQuantity(symbol string, quantity float64) (string, error)
