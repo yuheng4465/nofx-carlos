@@ -42,6 +42,13 @@ func Get(symbol string) (*Data, error) {
 		return nil, fmt.Errorf("获取4小时K线失败: %v", err)
 	}
 
+	// 获取最新成交数据
+	var tradeData []Trade
+	tradeData, err = WSMonitorCli.GetCurrentTrades(symbol)
+	if err != nil {
+		return nil, fmt.Errorf("获取最新成交数据失败: %v", err)
+	}
+
 	// 计算当前指标 (基于3分钟最新数据)
 	currentPrice := klines3m[len(klines3m)-1].Close
 	currentEMA20 := calculateEMA(klines3m, 20)
@@ -90,6 +97,9 @@ func Get(symbol string) (*Data, error) {
 	// 计算长期数据 (4小时)
 	longerTermData := calculateLongerTermData(klines4h)
 
+	// 计算
+	buySellRatio := CalculateBuySellRatio(tradeData)
+
 	return &Data{
 		Symbol:            symbol,
 		CurrentPrice:      currentPrice,
@@ -104,6 +114,7 @@ func Get(symbol string) (*Data, error) {
 		MidTermSeries15m:  midTermData15m,
 		MidTermSeries1h:   midTermData1h,
 		LongerTermContext: longerTermData,
+		BuySellRatio:      buySellRatio,
 	}, nil
 }
 
@@ -402,6 +413,42 @@ func calculateLongerTermData(klines []Kline) *LongerTermData {
 	return data
 }
 
+// CalculateBuySellRatio 计算给定交易列表的Buy/Sell Ratio
+// 参数 trades: 包含交易方向信息的交易列表
+// 返回值 ratio: Buy/Sell Ratio。如果卖出量为0，返回-1表示无穷大（或根据情况返回特殊值）
+func CalculateBuySellRatio(trades []Trade) float64 {
+	var totalBuyVolume float64
+	var totalSellVolume float64
+
+	// 数据过少不计算结果
+	if len(trades) < 300 {
+		return 0
+	}
+
+	for _, trade := range trades {
+		if trade.IsTakerSell {
+			// 这是主动卖出单
+			totalSellVolume += trade.Qty
+		} else {
+			// 这是主动买入单
+			totalBuyVolume += trade.Qty
+		}
+	}
+
+	// 避免除零错误
+	if totalSellVolume == 0 {
+		if totalBuyVolume > 0 {
+			// 如果卖出量为0但买入量大于0，比率可以视为无穷大，这里返回一个特殊值，例如-1
+			return -1
+		}
+		// 如果买卖量都为0，则比率为0/0，没有意义，返回0
+		return 0
+	}
+
+	ratio := totalBuyVolume / totalSellVolume
+	return ratio
+}
+
 // getOpenInterestData 获取OI数据
 func getOpenInterestData(symbol string) (*OIData, error) {
 	api_url := fmt.Sprintf("https://fapi.binance.com/fapi/v1/openInterest?symbol=%s", symbol)
@@ -515,7 +562,9 @@ func Format(data *Data) string {
 			data.OpenInterest.Latest, data.OpenInterest.Average))
 	}
 
-	sb.WriteString(fmt.Sprintf("Funding Rate: %.2e\n\n", data.FundingRate))
+	sb.WriteString(fmt.Sprintf("Funding Rate: %.8f\n\n", data.FundingRate))
+
+	sb.WriteString(fmt.Sprintf("BuySellRatio: %.2f\n\n", data.BuySellRatio))
 
 	if data.IntradaySeries != nil {
 		sb.WriteString("Intraday series (3‑minute intervals, oldest → latest):\n\n")

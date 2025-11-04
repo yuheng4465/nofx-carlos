@@ -17,6 +17,7 @@ type Data struct {
 	MidTermSeries15m  *MidTermData15m // 15分钟数据 - 短期趋势
 	MidTermSeries1h   *MidTermData1h  // 1小时数据 - 中期趋势
 	LongerTermContext *LongerTermData // 4小时数据 - 长期趋势
+	BuySellRatio      float64
 }
 
 // OIData Open Interest数据
@@ -94,6 +95,27 @@ type Kline struct {
 }
 
 type KlineResponse []interface{}
+
+// 订单薄近期成交
+type TradeInfo struct {
+	Id          int64  `json:"a"`
+	Price       string `json:"p"`
+	Qty         string `json:"q"`
+	FirstId     int64  `json:"f"`
+	EndId       int64  `json:"l"`
+	Time        int64  `json:"T"`
+	IsTakerSell bool   `json:"m"`
+}
+
+type Trade struct {
+	Id          int64
+	Price       float64
+	Qty         float64
+	FirstId     int64
+	EndId       int64
+	Time        int64
+	IsTakerSell bool
+}
 
 type PriceTicker struct {
 	Symbol string `json:"symbol"`

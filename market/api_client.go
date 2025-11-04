@@ -60,6 +60,64 @@ func (c *APIClient) GetExchangeInfo() (*ExchangeInfo, error) {
 	return &exchangeInfo, nil
 }
 
+// 获取近期成交（归集）
+func (c *APIClient) GetAggTrades(symbol string, limit int) ([]Trade, error) {
+	url := fmt.Sprintf("%s/fapi/v1/aggTrades", baseURL)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	q := req.URL.Query()
+	q.Add("symbol", symbol)
+	q.Add("limit", strconv.Itoa(limit))
+	req.URL.RawQuery = q.Encode()
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var tradeInfo []TradeInfo
+	err = json.Unmarshal(body, &tradeInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	var trades []Trade
+	for _, tr := range tradeInfo {
+		trade, err := parseTrade(tr)
+		if err != nil {
+			log.Printf("解析成交数据失败: %v", err)
+			continue
+		}
+		trades = append(trades, trade)
+	}
+
+	return trades, nil
+}
+
+func parseTrade(tr TradeInfo) (Trade, error) {
+	var trade Trade
+
+	// 设置直接匹配的字段
+	trade.Id = tr.Id
+	trade.Time = tr.Time
+	trade.IsTakerSell = tr.IsTakerSell
+
+	// 处理Price字段的转换
+	trade.Price, _ = strconv.ParseFloat(tr.Price, 64)
+	trade.Qty, _ = strconv.ParseFloat(tr.Qty, 64)
+
+	return trade, nil
+}
+
 func (c *APIClient) GetKlines(symbol, interval string, limit int) ([]Kline, error) {
 	url := fmt.Sprintf("%s/fapi/v1/klines", baseURL)
 	req, err := http.NewRequest("GET", url, nil)

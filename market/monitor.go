@@ -18,20 +18,21 @@ const (
 )
 
 type WSMonitor struct {
-	wsClient        *WSClient
-	combinedClient  *CombinedStreamsClient
-	symbols         []string
-	featuresMap     sync.Map
-	alertsChan      chan Alert
-	klineDataMap3m  sync.Map // 存储每个交易对的K线历史数据
-	klineDataMap15m sync.Map // 存储每个交易对的15分钟K线历史数据
-	klineDataMap1h  sync.Map // 存储每个交易对的1小时K线历史数据
-	klineDataMap4h  sync.Map // 存储每个交易对的K线历史数据
-	tickerDataMap   sync.Map // 存储每个交易对的ticker数据
-	batchSize       int
-	filterSymbols   sync.Map // 使用sync.Map来存储需要监控的币种和其状态
-	symbolStats     sync.Map // 存储币种统计信息
-	FilterSymbol    []string //经过筛选的币种
+	wsClient         *WSClient
+	combinedClient   *CombinedStreamsClient
+	symbols          []string
+	featuresMap      sync.Map
+	alertsChan       chan Alert
+	klineDataMap3m   sync.Map // 存储每个交易对的K线历史数据
+	klineDataMap15m  sync.Map // 存储每个交易对的15分钟K线历史数据
+	klineDataMap1h   sync.Map // 存储每个交易对的1小时K线历史数据
+	klineDataMap4h   sync.Map // 存储每个交易对的K线历史数据
+	tickerDataMap    sync.Map // 存储每个交易对的ticker数据
+	aggTradesDataMap sync.Map // 存储每个交易对的aggTrades数据
+	batchSize        int
+	filterSymbols    sync.Map // 使用sync.Map来存储需要监控的币种和其状态
+	symbolStats      sync.Map // 存储币种统计信息
+	FilterSymbol     []string //经过筛选的币种
 }
 type SymbolStats struct {
 	LastActiveTime   time.Time
@@ -200,6 +201,62 @@ func (m *WSMonitor) subscribeSymbol(symbol, st string) []string {
 
 	return streams
 }
+
+// subscribeSymbol 注册监听
+func (m *WSMonitor) subscribeAggTrade(symbol string) []string {
+	var streams []string
+	stream := fmt.Sprintf("%s@aggTrade", strings.ToLower(symbol))
+	ch := m.combinedClient.AddSubscriber(stream, 500)
+	streams = append(streams, stream)
+	go m.handleAggTradeData(symbol, ch)
+
+	return streams
+}
+
+func (m *WSMonitor) handleAggTradeData(symbol string, ch <-chan []byte) {
+	for data := range ch {
+		var tradeInfo TradeInfo
+		if err := json.Unmarshal(data, &tradeInfo); err != nil {
+			log.Printf("解析AggTrade数据失败: %v", err)
+			continue
+		}
+		trade, err := parseTrade(tradeInfo)
+		if err != nil {
+			log.Printf("解析成交数据失败: %v", err)
+			continue
+		}
+		m.processAggTradeUpdate(symbol, trade)
+	}
+}
+
+func (m *WSMonitor) processAggTradeUpdate(symbol string, trade Trade) {
+	// 转换WebSocket数据为TradeInfo结构
+	var aggTradesDataMap = &m.aggTradesDataMap
+	value, exists := aggTradesDataMap.Load(symbol)
+	var aggTrades []Trade
+	if exists {
+		aggTrades = value.([]Trade)
+
+		// 检查是否是新
+		if len(aggTrades) > 0 && aggTrades[len(aggTrades)-1].Time == trade.Time {
+			// 更新当前
+			aggTrades[len(aggTrades)-1] = trade
+		} else {
+			// 添加
+			aggTrades = append(aggTrades, trade)
+
+			// 保持数据长度
+			if len(aggTrades) > 500 {
+				aggTrades = aggTrades[1:]
+			}
+		}
+	} else {
+		aggTrades = append(aggTrades, trade)
+	}
+
+	aggTradesDataMap.Store(strings.ToUpper(symbol), aggTrades)
+}
+
 func (m *WSMonitor) subscribeAll() error {
 	// 执行批量订阅
 	log.Println("开始订阅所有交易对...")
@@ -215,6 +272,12 @@ func (m *WSMonitor) subscribeAll() error {
 			return err
 		}
 	}
+
+	log.Println("开始订阅所有交易对成交数据...")
+	for _, symbol := range m.symbols {
+		m.subscribeAggTrade(symbol)
+	}
+
 	log.Println("所有交易对订阅完成")
 	return nil
 }
@@ -246,6 +309,7 @@ func (m *WSMonitor) getKlineDataMap(_time string) *sync.Map {
 	}
 	return klineDataMap
 }
+
 func (m *WSMonitor) processKlineUpdate(symbol string, wsData KlineWSData, _time string) {
 	// 转换WebSocket数据为Kline结构
 	kline := Kline{
@@ -286,7 +350,43 @@ func (m *WSMonitor) processKlineUpdate(symbol string, wsData KlineWSData, _time 
 		klines = []Kline{kline}
 	}
 
-	klineDataMap.Store(symbol, klines)
+	klineDataMap.Store(strings.ToUpper(symbol), klines)
+}
+
+// 获取最新成交数据
+func (m *WSMonitor) GetCurrentTrades(symbol string) ([]Trade, error) {
+	// 对每一个进来的symbol检测是否存在内类 是否的话就订阅它
+	var aggTradesDataMap = &m.aggTradesDataMap
+	value, exists := aggTradesDataMap.Load(symbol)
+	if !exists {
+		// 如果Ws数据未初始化完成时,单独使用api获取 - 兼容性代码 (防止在未初始化完成是,已经有交易员运行)
+		apiClient := NewAPIClient()
+		aggTrades, err := apiClient.GetAggTrades(symbol, 500)
+		if err != nil {
+			return nil, fmt.Errorf("获取近期成交(归集)失败: %v", err)
+		}
+
+		// 动态缓存进缓存
+		aggTradesDataMap.Store(strings.ToUpper(symbol), aggTrades)
+
+		// 订阅 WebSocket 流
+		subStr := m.subscribeAggTrade(symbol)
+		subErr := m.combinedClient.subscribeStreams(subStr)
+		log.Printf("动态订阅流: %v", subStr)
+		if subErr != nil {
+			log.Printf("警告: 动态订阅成交归集数据失败: %v (使用API数据)", subErr)
+		}
+		// ✅ FIX: 返回深拷贝而非引用
+		result := make([]Trade, len(aggTrades))
+		copy(result, aggTrades)
+		return result, nil
+	}
+
+	// ✅ FIX: 返回深拷贝而非引用，避免并发竞态条件
+	aggTrades := value.([]Trade)
+	result := make([]Trade, len(aggTrades))
+	copy(result, aggTrades)
+	return result, nil
 }
 
 func (m *WSMonitor) GetCurrentKlines(symbol string, _time string) ([]Kline, error) {
