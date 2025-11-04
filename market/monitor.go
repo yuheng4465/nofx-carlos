@@ -264,6 +264,7 @@ func (m *WSMonitor) subscribeAll() error {
 		for _, st := range subKlineTime {
 			m.subscribeSymbol(symbol, st)
 		}
+		m.subscribeAggTrade(symbol)
 	}
 	for _, st := range subKlineTime {
 		err := m.combinedClient.BatchSubscribeKlines(m.symbols, st)
@@ -273,9 +274,10 @@ func (m *WSMonitor) subscribeAll() error {
 		}
 	}
 
-	log.Println("开始订阅所有交易对成交数据...")
-	for _, symbol := range m.symbols {
-		m.subscribeAggTrade(symbol)
+	err := m.combinedClient.BatchSubscribeAggTrades(m.symbols)
+	if err != nil {
+		log.Fatalf("❌ 订阅成交: %v", err)
+		return err
 	}
 
 	log.Println("所有交易对订阅完成")

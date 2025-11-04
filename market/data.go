@@ -422,7 +422,7 @@ func CalculateBuySellRatio(trades []Trade) float64 {
 
 	// 数据过少不计算结果
 	if len(trades) < 300 {
-		return 0
+		return -1
 	}
 
 	for _, trade := range trades {

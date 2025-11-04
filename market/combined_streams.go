@@ -84,6 +84,32 @@ func (c *CombinedStreamsClient) BatchSubscribeKlines(symbols []string, interval 
 	return nil
 }
 
+// BatchSubscribeKlines 批量订阅成交信息
+func (c *CombinedStreamsClient) BatchSubscribeAggTrades(symbols []string) error {
+	// 将symbols分批处理
+	batches := c.splitIntoBatches(symbols, c.batchSize)
+
+	for i, batch := range batches {
+		log.Printf("订阅第 %d 批, 数量: %d", i+1, len(batch))
+
+		streams := make([]string, len(batch))
+		for j, symbol := range batch {
+			streams[j] = fmt.Sprintf("%s@aggTrade", strings.ToLower(symbol))
+		}
+
+		if err := c.subscribeStreams(streams); err != nil {
+			return fmt.Errorf("第 %d 批订阅失败: %v", i+1, err)
+		}
+
+		// 批次间延迟，避免被限制
+		if i < len(batches)-1 {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	return nil
+}
+
 // splitIntoBatches 将切片分成指定大小的批次
 func (c *CombinedStreamsClient) splitIntoBatches(symbols []string, batchSize int) [][]string {
 	var batches [][]string
