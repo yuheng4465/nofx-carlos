@@ -1640,7 +1640,7 @@ func (at *AutoTrader) startDrawdownMonitor() {
 // 检查持仓回撤情况
 func (at *AutoTrader) checkPositionDrawdown() {
 	// 获取当前持仓
-	positions, err := at.trader.GetPositions()
+	positions, err := at.trader.GetPositions(false)
 	if err != nil {
 		log.Printf("❌ 回撤监控：获取持仓失败: %v", err)
 		return
@@ -1714,13 +1714,13 @@ func (at *AutoTrader) checkPositionDrawdown() {
 func (at *AutoTrader) emergencyClosePosition(symbol, side string) error {
 	switch side {
 	case "long":
-		order, err := at.trader.CloseLong(symbol, 0) // 0 = 全部平仓
+		order, err := at.trader.CloseLong(symbol, 0, false) // 0 = 全部平仓
 		if err != nil {
 			return err
 		}
 		log.Printf("✅ 紧急平多仓成功，订单ID: %v", order["orderId"])
 	case "short":
-		order, err := at.trader.CloseShort(symbol, 0) // 0 = 全部平仓
+		order, err := at.trader.CloseShort(symbol, 0, false) // 0 = 全部平仓
 		if err != nil {
 			return err
 		}

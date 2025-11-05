@@ -57,10 +57,6 @@ func NewFuturesTrader(apiKey, secretKey string) *FuturesTrader {
 
 	// 同步时间，避免 Timestamp ahead 错误
 	syncBinanceServerTime(client)
-	trader := &FuturesTrader{
-		client:        client,
-		cacheDuration: 15 * time.Second, // 15秒缓存
-	}
 
 	// 设置双向持仓模式（Hedge Mode）
 	// 这是必需的，因为代码中使用了 PositionSide (LONG/SHORT)
@@ -89,6 +85,7 @@ func (t *FuturesTrader) syncServerTime(ctx context.Context, force bool) error {
 	drift := time.Duration(offset) * time.Millisecond
 	log.Printf("✓ Binance服务器时间同步成功 (offset=%s)", drift)
 	return nil
+}
 
 // setDualSidePosition 设置双向持仓模式（初始化时调用）
 func (t *FuturesTrader) setDualSidePosition() error {
@@ -546,8 +543,6 @@ func (t *FuturesTrader) CloseShort(symbol string, quantity float64, isPartial bo
 	return result, nil
 }
 
-
-
 // CancelStopLossOrders 仅取消止损单（不影响止盈单）
 func (t *FuturesTrader) CancelStopLossOrders(symbol string) error {
 	// 获取该币种的所有未完成订单
@@ -643,53 +638,6 @@ func (t *FuturesTrader) CancelAllOrders(symbol string) error {
 	}
 
 	log.Printf("  ✓ 已取消 %s 的所有挂单", symbol)
-	return nil
-}
-
-// CancelStopOrders 取消该币种的止盈/止损单（用于调整止盈止损位置）
-func (t *FuturesTrader) CancelStopOrders(symbol string) error {
-	// 获取该币种的所有未完成订单
-	orders, err := t.client.NewListOpenOrdersService().
-		Symbol(symbol).
-		Do(context.Background())
-
-	if err != nil {
-		return fmt.Errorf("获取未完成订单失败: %w", err)
-	}
-
-	// 过滤出止盈止损单并取消
-	canceledCount := 0
-	for _, order := range orders {
-		orderType := order.Type
-
-		// 只取消止损和止盈订单
-		if orderType == futures.OrderTypeStopMarket ||
-			orderType == futures.OrderTypeTakeProfitMarket ||
-			orderType == futures.OrderTypeStop ||
-			orderType == futures.OrderTypeTakeProfit {
-
-			_, err := t.client.NewCancelOrderService().
-				Symbol(symbol).
-				OrderID(order.OrderID).
-				Do(context.Background())
-
-			if err != nil {
-				log.Printf("  ⚠ 取消订单 %d 失败: %v", order.OrderID, err)
-				continue
-			}
-
-			canceledCount++
-			log.Printf("  ✓ 已取消 %s 的止盈/止损单 (订单ID: %d, 类型: %s)",
-				symbol, order.OrderID, orderType)
-		}
-	}
-
-	if canceledCount == 0 {
-		log.Printf("  ℹ %s 没有止盈/止损单需要取消", symbol)
-	} else {
-		log.Printf("  ✓ 已取消 %s 的 %d 个止盈/止损单", symbol, canceledCount)
-	}
-
 	return nil
 }
 

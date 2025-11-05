@@ -100,10 +100,6 @@ type Decision struct {
 	Confidence int     `json:"confidence,omitempty"` // 信心度 (0-100)
 	RiskUSD    float64 `json:"risk_usd,omitempty"`   // 最大美元风险
 	Reasoning  string  `json:"reasoning"`
-	// 调整参数（新增）
-	NewStopLoss     float64 `json:"new_stop_loss,omitempty"`    // 用于 update_stop_loss
-	NewTakeProfit   float64 `json:"new_take_profit,omitempty"`  // 用于 update_take_profit
-	ClosePercentage float64 `json:"close_percentage,omitempty"` // 用于 partial_close (0-100)
 }
 
 // FullDecision AI的完整决策（包含思维链）

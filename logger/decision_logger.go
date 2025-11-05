@@ -455,9 +455,7 @@ func (l *DecisionLogger) AnalyzePerformance(lookbackCycles int) (*PerformanceAna
 						actualQuantity = action.Quantity
 					}
 
-					// 计算实际盈亏（USDT）
-					// // 合约交易 PnL 计算：actualQuantity × 价格差
-					// 注意：杠杆不影响绝对盈亏，只影响保证金需求
+					// 计算本次平仓的盈亏（USDT）
 					var pnl float64
 					if side == "long" {
 						pnl = actualQuantity * (action.Price - openPrice)
@@ -465,31 +463,6 @@ func (l *DecisionLogger) AnalyzePerformance(lookbackCycles int) (*PerformanceAna
 						pnl = actualQuantity * (openPrice - action.Price)
 					}
 
-
-					// 计算盈亏百分比（相对保证金）
-					positionValue := actualQuantity * openPrice
-					marginUsed := positionValue / float64(leverage)
-					pnlPct := 0.0
-					if marginUsed > 0 {
-						pnlPct = (pnl / marginUsed) * 100
-					}
-
-					// 记录交易结果
-					outcome := TradeOutcome{
-						Symbol:        symbol,
-						Side:          side,
-						Quantity:      actualQuantity,
-						Leverage:      leverage,
-						OpenPrice:     openPrice,
-						ClosePrice:    action.Price,
-						PositionValue: positionValue,
-						MarginUsed:    marginUsed,
-						PnL:           pnl,
-						PnLPct:        pnlPct,
-						Duration:      action.Timestamp.Sub(openTime).String(),
-						OpenTime:      openTime,
-						CloseTime:     action.Timestamp,
-					}
 					// 🔧 BUG FIX：處理 partial_close 聚合邏輯
 					if action.Action == "partial_close" {
 						// 累積盈虧和數量
@@ -561,8 +534,7 @@ func (l *DecisionLogger) AnalyzePerformance(lookbackCycles int) (*PerformanceAna
 							delete(openPositions, posKey)
 						}
 						// ⚠️ 否則不做任何操作（等待後續 partial_close 或 full close）
-					// 移除已平仓记录（partial_close 不刪除，因為還有剩餘倉位）
-					if action.Action != "partial_close" {
+
 					} else {
 						// 🔧 完全平倉（close_long/close_short/auto_close）
 						// 如果之前有部分平倉，需要加上累積的 PnL

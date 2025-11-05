@@ -175,10 +175,10 @@ func (t *HyperliquidTrader) GetBalance() (map[string]interface{}, error) {
 	//      原因：Spot 和 Perpetuals 是獨立帳戶，需手動 ClassTransfer 才能轉帳
 	totalWalletBalance := walletBalanceWithoutUnrealized + spotUSDCBalance
 
-	result["totalWalletBalance"] = totalWalletBalance      // 總資產（Perp + Spot）
-	result["availableBalance"] = availableBalance          // 可用餘額（僅 Perpetuals，不含 Spot）
-	result["totalUnrealizedProfit"] = totalUnrealizedPnl   // 未實現盈虧（僅來自 Perpetuals）
-	result["spotBalance"] = spotUSDCBalance                // Spot 現貨餘額（單獨返回）
+	result["totalWalletBalance"] = totalWalletBalance    // 總資產（Perp + Spot）
+	result["availableBalance"] = availableBalance        // 可用餘額（僅 Perpetuals，不含 Spot）
+	result["totalUnrealizedProfit"] = totalUnrealizedPnl // 未實現盈虧（僅來自 Perpetuals）
+	result["spotBalance"] = spotUSDCBalance              // Spot 現貨餘額（單獨返回）
 
 	log.Printf("✓ Hyperliquid 完整账户:")
 	log.Printf("  • Spot 现货余额: %.2f USDC （需手动转账到 Perpetuals 才能开仓）", spotUSDCBalance)
@@ -556,13 +556,12 @@ func (t *HyperliquidTrader) CloseShort(symbol string, quantity float64, isPartia
 
 // CancelStopOrders 取消该币种的止盈/止
 
-
 // CancelStopLossOrders 仅取消止损单（Hyperliquid 暂无法区分止损和止盈，取消所有）
 func (t *HyperliquidTrader) CancelStopLossOrders(symbol string) error {
 	// Hyperliquid SDK 的 OpenOrder 结构不暴露 trigger 字段
 	// 无法区分止损和止盈单，因此取消该币种的所有挂单
 	log.Printf("  ⚠️ Hyperliquid 无法区分止损/止盈单，将取消所有挂单")
-	return t.CancelStopOrders(symbol)
+	return t.CancelStopOrders(symbol, "all")
 }
 
 // CancelTakeProfitOrders 仅取消止盈单（Hyperliquid 暂无法区分止损和止盈，取消所有）
@@ -570,7 +569,7 @@ func (t *HyperliquidTrader) CancelTakeProfitOrders(symbol string) error {
 	// Hyperliquid SDK 的 OpenOrder 结构不暴露 trigger 字段
 	// 无法区分止损和止盈单，因此取消该币种的所有挂单
 	log.Printf("  ⚠️ Hyperliquid 无法区分止损/止盈单，将取消所有挂单")
-	return t.CancelStopOrders(symbol)
+	return t.CancelStopOrders(symbol, "all")
 }
 
 // CancelAllOrders 取消该币种的所有挂单
@@ -594,40 +593,6 @@ func (t *HyperliquidTrader) CancelAllOrders(symbol string) error {
 	}
 
 	log.Printf("  ✓ 已取消 %s 的所有挂单", symbol)
-	return nil
-}
-
-// CancelStopOrders 取消该币种的止盈/止损单（用于调整止盈止损位置）
-func (t *HyperliquidTrader) CancelStopOrders(symbol string) error {
-	coin := convertSymbolToHyperliquid(symbol)
-
-	// 获取所有挂单
-	openOrders, err := t.exchange.Info().OpenOrders(t.ctx, t.walletAddr)
-	if err != nil {
-		return fmt.Errorf("获取挂单失败: %w", err)
-	}
-
-	// 注意：Hyperliquid SDK 的 OpenOrder 结构不暴露 trigger 字段
-	// 因此暂时取消该币种的所有挂单（包括止盈止损单）
-	// 这是安全的，因为在设置新的止盈止损之前，应该清理所有旧订单
-	canceledCount := 0
-	for _, order := range openOrders {
-		if order.Coin == coin {
-			_, err := t.exchange.Cancel(t.ctx, coin, order.Oid)
-			if err != nil {
-				log.Printf("  ⚠ 取消订单失败 (oid=%d): %v", order.Oid, err)
-				continue
-			}
-			canceledCount++
-		}
-	}
-
-	if canceledCount == 0 {
-		log.Printf("  ℹ %s 没有挂单需要取消", symbol)
-	} else {
-		log.Printf("  ✓ 已取消 %s 的 %d 个挂单（包括止盈/止损单）", symbol, canceledCount)
-	}
-
 	return nil
 }
 
