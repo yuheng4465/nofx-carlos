@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/glebarez/sqlite"
+	_ "modernc.org/sqlite"
 )
 
 // Database 配置数据库
@@ -592,6 +592,16 @@ func (d *Database) UpdateUserOTPVerified(userID string, verified bool) error {
 	return err
 }
 
+// UpdateUserPassword 更新用户密码
+func (d *Database) UpdateUserPassword(userID, passwordHash string) error {
+	_, err := d.db.Exec(`
+		UPDATE users
+		SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, passwordHash, userID)
+	return err
+}
+
 // GetAIModels 获取用户的AI模型配置
 func (d *Database) GetAIModels(userID string) ([]*AIModelConfig, error) {
 	rows, err := d.db.Query(`
@@ -896,6 +906,12 @@ func (d *Database) UpdateTrader(trader *TraderRecord) error {
 // UpdateTraderCustomPrompt 更新交易员自定义Prompt
 func (d *Database) UpdateTraderCustomPrompt(userID, id string, customPrompt string, overrideBase bool) error {
 	_, err := d.db.Exec(`UPDATE traders SET custom_prompt = ?, override_base_prompt = ? WHERE id = ? AND user_id = ?`, customPrompt, overrideBase, id, userID)
+	return err
+}
+
+// UpdateTraderInitialBalance 更新交易员初始余额（用于自动同步交易所实际余额）
+func (d *Database) UpdateTraderInitialBalance(userID, id string, newBalance float64) error {
+	_, err := d.db.Exec(`UPDATE traders SET initial_balance = ? WHERE id = ? AND user_id = ?`, newBalance, id, userID)
 	return err
 }
 

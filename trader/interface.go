@@ -39,6 +39,12 @@ type Trader interface {
 	// SetTakeProfit 设置止盈单
 	SetTakeProfit(symbol string, positionSide string, quantity, takeProfitPrice float64) error
 
+	// CancelStopLossOrders 仅取消止损单（修复 BUG：调整止损时不删除止盈）
+	CancelStopLossOrders(symbol string) error
+
+	// CancelTakeProfitOrders 仅取消止盈单（修复 BUG：调整止盈时不删除止损）
+	CancelTakeProfitOrders(symbol string) error
+
 	// CancelAllOrders 取消该币种的所有挂单
 	CancelAllOrders(symbol string) error
 

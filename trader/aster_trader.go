@@ -438,13 +438,23 @@ func (t *AsterTrader) GetBalance() (map[string]interface{}, error) {
 		return nil, err
 	}
 
+	// 🔍 调试：打印原始API响应
+	log.Printf("🔍 Aster API原始响应: %s", string(body))
+
 	// 查找USDT余额
 	totalBalance := 0.0
 	availableBalance := 0.0
 	crossUnPnl := 0.0
 
 	for _, bal := range balances {
+		// 🔍 调试：打印每条余额记录
+		log.Printf("🔍 余额记录: %+v", bal)
+
 		if asset, ok := bal["asset"].(string); ok && asset == "USDT" {
+			// 🔍 调试：打印USDT余额详情
+			log.Printf("🔍 USDT余额详情: balance=%v, availableBalance=%v, crossUnPnl=%v",
+				bal["balance"], bal["availableBalance"], bal["crossUnPnl"])
+
 			if wb, ok := bal["balance"].(string); ok {
 				totalBalance, _ = strconv.ParseFloat(wb, 64)
 			}
@@ -458,11 +468,25 @@ func (t *AsterTrader) GetBalance() (map[string]interface{}, error) {
 		}
 	}
 
+	// ✅ Aster API完全兼容Binance API格式
+	// balance字段 = wallet balance（不包含未实现盈亏）
+	// crossUnPnl = unrealized profit（未实现盈亏）
+	// crossWalletBalance = balance + crossUnPnl（全仓钱包余额，包含盈亏）
+	//
+	// 参考Binance官方文档：
+	// - Account Information V2: marginBalance = walletBalance + unrealizedProfit
+	// - Balance V3: crossWalletBalance = balance + crossUnPnl
+
+	log.Printf("✓ Aster API返回: 钱包余额=%.2f, 未实现盈亏=%.2f, 可用余额=%.2f",
+		totalBalance,
+		crossUnPnl,
+		availableBalance)
+
 	// 返回与Binance相同的字段名，确保AutoTrader能正确解析
 	return map[string]interface{}{
-		"totalWalletBalance":    totalBalance,
+		"totalWalletBalance":    totalBalance, // 钱包余额（不含未实现盈亏）
 		"availableBalance":      availableBalance,
-		"totalUnrealizedProfit": crossUnPnl,
+		"totalUnrealizedProfit": crossUnPnl, // 未实现盈亏
 	}, nil
 }
 
@@ -847,6 +871,21 @@ func (t *AsterTrader) SetMarginMode(symbol string, isCrossMargin bool) error {
 			log.Printf("  ✓ %s 仓位模式已是 %s 或有持仓无法更改", symbol, marginType)
 			return nil
 		}
+		// 检测多资产模式（错误码 -4168）
+		if strings.Contains(err.Error(), "Multi-Assets mode") ||
+			strings.Contains(err.Error(), "-4168") ||
+			strings.Contains(err.Error(), "4168") {
+			log.Printf("  ⚠️ %s 检测到多资产模式，强制使用全仓模式", symbol)
+			log.Printf("  💡 提示：如需使用逐仓模式，请在交易所关闭多资产模式")
+			return nil
+		}
+		// 检测统一账户 API
+		if strings.Contains(err.Error(), "unified") ||
+			strings.Contains(err.Error(), "portfolio") ||
+			strings.Contains(err.Error(), "Portfolio") {
+			log.Printf("  ❌ %s 检测到统一账户 API，无法进行合约交易", symbol)
+			return fmt.Errorf("请使用「现货与合约交易」API 权限，不要使用「统一账户 API」")
+		}
 		log.Printf("  ⚠️ 设置仓位模式失败: %v", err)
 		// 不返回错误，让交易继续
 		return nil
@@ -1021,6 +1060,120 @@ func (t *AsterTrader) CancelStopOrders(symbol string, orderSide string) error {
 				"orderId": int64(orderID),
 			}
 
+			_, err := t.request("DELETE", "/fapi/v1/order", cancelParams)
+			if err != nil {
+				log.Printf("  ⚠ 取消止损单 %d 失败: %v", int64(orderID), err)
+				continue
+			}
+
+			canceledCount++
+			log.Printf("  ✓ 已取消止损单 (订单ID: %d, 类型: %s)", int64(orderID), orderType)
+		}
+	}
+
+	if canceledCount == 0 {
+		log.Printf("  ℹ %s 没有止损单需要取消", symbol)
+	} else {
+		log.Printf("  ✓ 已取消 %s 的 %d 个止损单", symbol, canceledCount)
+	}
+
+	return nil
+}
+
+// CancelTakeProfitOrders 仅取消止盈单（不影响止损单）
+func (t *AsterTrader) CancelTakeProfitOrders(symbol string) error {
+	// 获取该币种的所有未完成订单
+	params := map[string]interface{}{
+		"symbol": symbol,
+	}
+
+	body, err := t.request("GET", "/fapi/v3/openOrders", params)
+	if err != nil {
+		return fmt.Errorf("获取未完成订单失败: %w", err)
+	}
+
+	var orders []map[string]interface{}
+	if err := json.Unmarshal(body, &orders); err != nil {
+		return fmt.Errorf("解析订单数据失败: %w", err)
+	}
+
+	// 过滤出止盈单并取消
+	canceledCount := 0
+	for _, order := range orders {
+		orderType, _ := order["type"].(string)
+
+		// 只取消止盈订单（不取消止损订单）
+		if orderType == "TAKE_PROFIT_MARKET" || orderType == "TAKE_PROFIT" {
+			orderID, _ := order["orderId"].(float64)
+			cancelParams := map[string]interface{}{
+				"symbol":  symbol,
+				"orderId": int64(orderID),
+			}
+
+			_, err := t.request("DELETE", "/fapi/v1/order", cancelParams)
+			if err != nil {
+				log.Printf("  ⚠ 取消止盈单 %d 失败: %v", int64(orderID), err)
+				continue
+			}
+
+			canceledCount++
+			log.Printf("  ✓ 已取消止盈单 (订单ID: %d, 类型: %s)", int64(orderID), orderType)
+		}
+	}
+
+	if canceledCount == 0 {
+		log.Printf("  ℹ %s 没有止盈单需要取消", symbol)
+	} else {
+		log.Printf("  ✓ 已取消 %s 的 %d 个止盈单", symbol, canceledCount)
+	}
+
+	return nil
+}
+
+// CancelAllOrders 取消所有订单
+func (t *AsterTrader) CancelAllOrders(symbol string) error {
+	params := map[string]interface{}{
+		"symbol": symbol,
+	}
+
+	_, err := t.request("DELETE", "/fapi/v3/allOpenOrders", params)
+	return err
+}
+
+// CancelStopOrders 取消该币种的止盈/止损单（用于调整止盈止损位置）
+func (t *AsterTrader) CancelStopOrders(symbol string) error {
+	// 获取该币种的所有未完成订单
+	params := map[string]interface{}{
+		"symbol": symbol,
+	}
+
+	body, err := t.request("GET", "/fapi/v3/openOrders", params)
+	if err != nil {
+		return fmt.Errorf("获取未完成订单失败: %w", err)
+	}
+
+	var orders []map[string]interface{}
+	if err := json.Unmarshal(body, &orders); err != nil {
+		return fmt.Errorf("解析订单数据失败: %w", err)
+	}
+
+	// 过滤出止盈止损单并取消
+	canceledCount := 0
+	for _, order := range orders {
+		orderType, _ := order["type"].(string)
+
+		// 只取消止损和止盈订单
+		if orderType == "STOP_MARKET" ||
+			orderType == "TAKE_PROFIT_MARKET" ||
+			orderType == "STOP" ||
+			orderType == "TAKE_PROFIT" {
+
+			orderID, _ := order["orderId"].(float64)
+			cancelParams := map[string]interface{}{
+				"symbol":  symbol,
+				"orderId": int64(orderID),
+			}
+
 			_, err := t.request("DELETE", "/fapi/v3/order", cancelParams)
 			if err != nil {
 				log.Printf("  ⚠ 取消订单 %d 失败: %v", int64(orderID), err)
@@ -1040,16 +1193,6 @@ func (t *AsterTrader) CancelStopOrders(symbol string, orderSide string) error {
 	}
 
 	return nil
-}
-
-// CancelAllOrders 取消所有订单
-func (t *AsterTrader) CancelAllOrders(symbol string) error {
-	params := map[string]interface{}{
-		"symbol": symbol,
-	}
-
-	_, err := t.request("DELETE", "/fapi/v3/allOpenOrders", params)
-	return err
 }
 
 // FormatQuantity 格式化数量（实现Trader接口）
