@@ -260,7 +260,7 @@ func (at *AutoTrader) Run() error {
 	log.Println("🤖 AI将全权决定杠杆、仓位大小、止损止盈等参数")
 
 	// 启动回撤监控
-	at.startDrawdownMonitor()
+	// at.startDrawdownMonitor()
 
 	ticker := time.NewTicker(at.config.ScanInterval)
 	defer ticker.Stop()
