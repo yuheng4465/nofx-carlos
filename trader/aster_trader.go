@@ -175,7 +175,7 @@ func (t *AsterTrader) formatPrice(symbol string, price float64) (float64, error)
 }
 
 // formatQuantity 格式化数量到正确精度和step size
-func (t *AsterTrader) formatQuantity(symbol string, quantity float64) (float64, error) {
+func (t *AsterTrader) formatQuantity(symbol string, quantity float64, precisionType string) (float64, error) {
 	prec, err := t.getPrecision(symbol)
 	if err != nil {
 		return 0, err
@@ -546,7 +546,7 @@ func (t *AsterTrader) OpenLong(symbol string, quantity float64, leverage int) (m
 	if err != nil {
 		return nil, err
 	}
-	formattedQty, err := t.formatQuantity(symbol, quantity)
+	formattedQty, err := t.formatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return nil, err
 	}
@@ -613,7 +613,7 @@ func (t *AsterTrader) OpenShort(symbol string, quantity float64, leverage int) (
 	if err != nil {
 		return nil, err
 	}
-	formattedQty, err := t.formatQuantity(symbol, quantity)
+	formattedQty, err := t.formatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return nil, err
 	}
@@ -688,7 +688,7 @@ func (t *AsterTrader) CloseLong(symbol string, quantity float64, isPartial bool)
 	if err != nil {
 		return nil, err
 	}
-	formattedQty, err := t.formatQuantity(symbol, quantity)
+	formattedQty, err := t.formatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return nil, err
 	}
@@ -774,7 +774,7 @@ func (t *AsterTrader) CloseShort(symbol string, quantity float64, isPartial bool
 	if err != nil {
 		return nil, err
 	}
-	formattedQty, err := t.formatQuantity(symbol, quantity)
+	formattedQty, err := t.formatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return nil, err
 	}
@@ -911,7 +911,7 @@ func (t *AsterTrader) SetStopLoss(symbol string, positionSide string, quantity, 
 	if err != nil {
 		return err
 	}
-	formattedQty, err := t.formatQuantity(symbol, quantity)
+	formattedQty, err := t.formatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return err
 	}
@@ -952,7 +952,7 @@ func (t *AsterTrader) SetTakeProfit(symbol string, positionSide string, quantity
 	if err != nil {
 		return err
 	}
-	formattedQty, err := t.formatQuantity(symbol, quantity)
+	formattedQty, err := t.formatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return err
 	}
@@ -1053,8 +1053,8 @@ func (t *AsterTrader) CancelAllOrders(symbol string) error {
 }
 
 // FormatQuantity 格式化数量（实现Trader接口）
-func (t *AsterTrader) FormatQuantity(symbol string, quantity float64) (string, error) {
-	formatted, err := t.formatQuantity(symbol, quantity)
+func (t *AsterTrader) FormatQuantity(symbol string, quantity float64, precisionType string) (string, error) {
+	formatted, err := t.formatQuantity(symbol, quantity, precisionType)
 	if err != nil {
 		return "", err
 	}

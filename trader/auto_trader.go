@@ -231,7 +231,7 @@ func NewAutoTrader(config AutoTraderConfig) (*AutoTrader, error) {
 		positionFirstSeenTime: make(map[string]int64),
 		lastPositions:         make(map[string]*PositionSnapshot),
 		callbackRate:          0.5,
-		activationPriceRate:   50,
+		activationPriceRate:   40,
 	}, nil
 }
 
@@ -244,9 +244,7 @@ func (at *AutoTrader) Run() error {
 	log.Println("🤖 AI将全权决定杠杆、仓位大小、止损止盈等参数")
 
 	ticker := time.NewTicker(at.config.ScanInterval)
-	// tickerOrder := time.NewTicker(10)
 	defer ticker.Stop()
-	// defer tickerOrder.Stop()
 
 	// 首次立即执行
 	if err := at.runCycle(); err != nil {
@@ -259,10 +257,6 @@ func (at *AutoTrader) Run() error {
 			if err := at.runCycle(); err != nil {
 				log.Printf("❌ 执行失败: %v", err)
 			}
-			// case <-tickerOrder.C:
-			// 	if err := at.runOrderCycle(); err != nil {
-			// 		log.Printf("❌ 订单检查执行失败: %v", err)
-			// 	}
 		}
 	}
 
@@ -273,73 +267,6 @@ func (at *AutoTrader) Run() error {
 func (at *AutoTrader) Stop() {
 	at.isRunning = false
 	log.Println("⏹ 自动交易系统停止")
-}
-
-// 运行订单检查周期
-func (at *AutoTrader) runOrderCycle() error {
-	// 获取持仓信息
-	positions, err := at.trader.GetPositions(true)
-	if err != nil {
-		log.Printf("获取持仓失败: %v", err)
-	}
-
-	if len(positions) == 0 {
-		return nil
-	}
-
-	for _, pos := range positions {
-		symbol := pos["symbol"].(string)
-		// 持仓未实现盈亏
-		unRealizedProfit := pos["unRealizedProfit"].(float64)
-		// 数量
-		positionAmt := pos["positionAmt"].(float64)
-		quantity := math.Abs(positionAmt)
-		// 成交均价
-		entryPrice := pos["entryPrice"].(float64)
-		// 订单方向
-		side := pos["side"].(string)
-		if unRealizedProfit <= 0 {
-			return nil
-		}
-
-		// 基于仓位的回报率
-		var rate, newStopLoss float64
-		rate = (unRealizedProfit / (entryPrice * quantity)) * 100
-		if rate < 1 {
-			return nil
-		}
-
-		// 做多
-		if side == "long" {
-			newStopLoss = entryPrice * (1 - 0.001)
-		} else {
-			newStopLoss = entryPrice * (1 + 0.001)
-		}
-
-		// 查询当前挂单止损价格
-
-		//移动止损点位
-		log.Printf("  🎯 调整止损: %s → %.2f", symbol, newStopLoss)
-
-		// 获取持仓方向和数量
-		positionSide := strings.ToUpper(side)
-
-		// 取消旧的止损单（避免多个止损单共存）
-		if err := at.trader.CancelStopOrders(symbol, "stop"); err != nil {
-			log.Printf("  ⚠ 取消旧止损单失败: %v", err)
-			// 不中断执行，继续设置新止损
-		}
-
-		// 调用交易所 API 修改止损
-		err = at.trader.SetStopLoss(symbol, positionSide, quantity, newStopLoss)
-		if err != nil {
-			return fmt.Errorf("修改止损失败: %w", err)
-		}
-
-		log.Printf("  ✓ 止损已调整: %.2f ", newStopLoss)
-	}
-
-	return nil
 }
 
 // runCycle 运行一个交易周期（使用AI全权决策）
@@ -823,10 +750,10 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *decision.Decision, act
 	}
 
 	// 设置追踪止损
-	var avgPrice = order["avgPrice"].(float64)
-	var activationPrice = decision.TakeProfit - (decision.TakeProfit-avgPrice)/(at.activationPriceRate/100)
+	avgPrice := order["avgPrice"].(float64)
+	activationPrice := decision.TakeProfit - (decision.TakeProfit-avgPrice)/(at.activationPriceRate/100)
 	// 回撤价格
-	var callbackPrice = activationPrice * ((100 - at.callbackRate) / 100)
+	callbackPrice := activationPrice * ((100 - at.callbackRate) / 100)
 	// 如果回撤后的价格比订单成交价还低则强制使用更高的激活价格
 	if callbackPrice <= avgPrice {
 		activationPrice = avgPrice * ((100 + at.callbackRate) / 100)
@@ -895,10 +822,10 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *decision.Decision, ac
 	}
 
 	// 设置追踪止损
-	var avgPrice = order["avgPrice"].(float64)
-	var activationPrice = decision.TakeProfit + (avgPrice-decision.TakeProfit)/(at.activationPriceRate/100)
+	avgPrice := order["avgPrice"].(float64)
+	activationPrice := decision.TakeProfit + (avgPrice-decision.TakeProfit)/(at.activationPriceRate/100)
 	// 回撤价格
-	var callbackPrice = activationPrice * ((100 + at.callbackRate) / 100)
+	callbackPrice := activationPrice * ((100 + at.callbackRate) / 100)
 	// 如果回撤后的价格比订单成交价还高则强制使用更低的激活价格
 	if callbackPrice >= avgPrice {
 		activationPrice = avgPrice * ((100 - at.callbackRate) / 100)

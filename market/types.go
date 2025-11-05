@@ -18,6 +18,7 @@ type Data struct {
 	MidTermSeries1h   *MidTermData1h  // 1小时数据 - 中期趋势
 	LongerTermContext *LongerTermData // 4小时数据 - 长期趋势
 	BuySellRatio      float64
+	OiHistData4h      float64
 }
 
 // OIData Open Interest数据
@@ -55,14 +56,15 @@ type MidTermData1h struct {
 
 // LongerTermData 长期数据(4小时时间框架)
 type LongerTermData struct {
-	EMA20         float64
-	EMA50         float64
-	ATR3          float64
-	ATR14         float64
-	CurrentVolume float64
-	AverageVolume float64
-	MACDValues    []float64
-	RSI14Values   []float64
+	EMA20           float64
+	EMA50           float64
+	ATR3            float64
+	ATR14           float64
+	CurrentVolume   float64
+	AverageVolume   float64
+	AverageVolume20 float64
+	MACDValues      []float64
+	RSI14Values     []float64
 }
 
 // Binance API 响应结构

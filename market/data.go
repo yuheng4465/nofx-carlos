@@ -80,6 +80,8 @@ func Get(symbol string) (*Data, error) {
 		// OI失败不影响整体,使用默认值
 		oiData = &OIData{Latest: 0, Average: 0}
 	}
+	// 获取4小时历史OI数据
+	oiHistData4h := getOpenInterestHistData(symbol, "4h")
 
 	// 获取Funding Rate
 	fundingRate, _ := getFundingRate(symbol)
@@ -97,7 +99,7 @@ func Get(symbol string) (*Data, error) {
 	// 计算长期数据 (4小时)
 	longerTermData := calculateLongerTermData(klines4h)
 
-	// 计算
+	// 计算BuySellRatio
 	buySellRatio := CalculateBuySellRatio(tradeData)
 
 	return &Data{
@@ -115,6 +117,7 @@ func Get(symbol string) (*Data, error) {
 		MidTermSeries1h:   midTermData1h,
 		LongerTermContext: longerTermData,
 		BuySellRatio:      buySellRatio,
+		OiHistData4h:      oiHistData4h,
 	}, nil
 }
 
@@ -387,10 +390,18 @@ func calculateLongerTermData(klines []Kline) *LongerTermData {
 		data.CurrentVolume = klines[len(klines)-1].Volume
 		// 计算平均成交量
 		sum := 0.0
+		sum20 := 0.0
+		count := 0
 		for _, k := range klines {
 			sum += k.Volume
+			if count < 20 {
+				sum20 += k.Volume
+			}
+			count++
 		}
 		data.AverageVolume = sum / float64(len(klines))
+		// 最近20分成交均量
+		data.AverageVolume20 = sum20 / 20
 	}
 
 	// 计算MACD和RSI序列
@@ -449,7 +460,7 @@ func CalculateBuySellRatio(trades []Trade) float64 {
 	return ratio
 }
 
-// getOpenInterestData 获取OI数据
+// getOpenInterestData 获取OI数据（获取当前未平仓合约数）
 func getOpenInterestData(symbol string) (*OIData, error) {
 	api_url := fmt.Sprintf("https://fapi.binance.com/fapi/v1/openInterest?symbol=%s", symbol)
 
@@ -496,6 +507,54 @@ func getOpenInterestData(symbol string) (*OIData, error) {
 		Latest:  oi,
 		Average: oi * 0.999, // 近似平均值
 	}, nil
+}
+
+// getOpenInterestHistData 获取OI数据（合约持仓量历史）
+func getOpenInterestHistData(symbol string, period string) float64 {
+	api_url := fmt.Sprintf("https://fapi.binance.com/futures/data/openInterestHist?symbol=%s&period=%s", symbol, period)
+
+	// 设置代理地址（例如：127.0.0.1:1080）
+	proxyURL, err := url.Parse("http://127.0.0.1:8800")
+	if err != nil {
+		log.Fatalf("解析代理地址失败: %v", err)
+	}
+
+	// 创建自定义 Transport 并设置代理
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+	}
+
+	// 创建 HTTP 客户端并使用自定义 Transport
+	client := &http.Client{
+		Transport: transport,
+	}
+
+	resp, err := client.Get(api_url)
+	if err != nil {
+		return 0.0
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return 0.0
+	}
+
+	type InterestData struct {
+		SumOpenInterest string `json:"sumOpenInterest"`
+		Symbol          string `json:"symbol"`
+		Timestamp       int64  `json:"timestamp"`
+	}
+
+	var data []InterestData
+	if err := json.Unmarshal(body, &data); err != nil {
+		return 0.0
+	}
+
+	lastItem := data[len(data)-1]
+	sumOpenInterest, _ := strconv.ParseFloat(lastItem.SumOpenInterest, 64)
+
+	return sumOpenInterest
 }
 
 // getFundingRate 获取资金费率
@@ -557,14 +616,16 @@ func Format(data *Data) string {
 	sb.WriteString(fmt.Sprintf("In addition, here is the latest %s open interest and funding rate for perps:\n\n",
 		data.Symbol))
 
-	if data.OpenInterest != nil {
-		sb.WriteString(fmt.Sprintf("Open Interest: Latest: %.2f Average: %.2f\n\n",
-			data.OpenInterest.Latest, data.OpenInterest.Average))
+	if data.OpenInterest != nil && data.OiHistData4h > 0 {
+		sb.WriteString(fmt.Sprintf("OI: %.2f vs. OI4h: %.2f\n\n",
+			data.OpenInterest.Latest, data.OiHistData4h))
 	}
 
 	sb.WriteString(fmt.Sprintf("Funding Rate: %.8f\n\n", data.FundingRate))
 
-	sb.WriteString(fmt.Sprintf("BuySellRatio: %.2f\n\n", data.BuySellRatio))
+	if data.BuySellRatio >= 0 {
+		sb.WriteString(fmt.Sprintf("BuySellRatio: %.2f\n\n", data.BuySellRatio))
+	}
 
 	if data.IntradaySeries != nil {
 		sb.WriteString("Intraday series (3‑minute intervals, oldest → latest):\n\n")
@@ -647,8 +708,8 @@ func Format(data *Data) string {
 		sb.WriteString(fmt.Sprintf("3‑Period ATR: %.3f vs. 14‑Period ATR: %.3f\n\n",
 			data.LongerTermContext.ATR3, data.LongerTermContext.ATR14))
 
-		sb.WriteString(fmt.Sprintf("Current Volume: %.3f vs. Average Volume: %.3f\n\n",
-			data.LongerTermContext.CurrentVolume, data.LongerTermContext.AverageVolume))
+		sb.WriteString(fmt.Sprintf("Current Volume: %.3f vs. Average Volume: %.3f vs. Volume MA(20): %.3f\n\n",
+			data.LongerTermContext.CurrentVolume, data.LongerTermContext.AverageVolume, data.LongerTermContext.AverageVolume20))
 
 		if len(data.LongerTermContext.MACDValues) > 0 {
 			sb.WriteString(fmt.Sprintf("MACD indicators: %s\n\n", formatFloatSlice(data.LongerTermContext.MACDValues)))

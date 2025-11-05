@@ -642,7 +642,7 @@ func (t *HyperliquidTrader) CancelStopOrders(symbol string, orderSide string) er
 }
 
 // FormatQuantity 格式化数量到正确的精度
-func (t *HyperliquidTrader) FormatQuantity(symbol string, quantity float64) (string, error) {
+func (t *HyperliquidTrader) FormatQuantity(symbol string, quantity float64, precisionType string) (string, error) {
 	coin := convertSymbolToHyperliquid(symbol)
 	szDecimals := t.getSzDecimals(coin)
 

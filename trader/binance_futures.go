@@ -28,6 +28,13 @@ type FuturesTrader struct {
 	// 缓存有效期（15秒）
 	cacheDuration time.Duration
 
+	// 数据进度缓存
+	cachedFormats     map[string]map[string]int
+	formatsCacheTime  time.Time
+	formatsCacheMutex sync.RWMutex
+	// 精度数据缓存有效期（300秒）
+	cachedFormatsDuration time.Duration
+
 	// 服务器时间同步
 	timeSyncMutex    sync.Mutex
 	lastTimeSync     time.Time
@@ -40,10 +47,11 @@ func NewFuturesTrader(apiKey, secretKey string) *FuturesTrader {
 	client := futures.NewProxiedClient(apiKey, secretKey, "http://127.0.0.1:8800")
 
 	trader := &FuturesTrader{
-		client:           client,
-		cacheDuration:    15 * time.Second, // 15秒缓存
-		timeSyncInterval: 30 * time.Second,
-		recvWindow:       futures.WithRecvWindow(3000), // 忽略服务器与本地时间差
+		client:                client,
+		cacheDuration:         15 * time.Second,  // 15秒缓存
+		cachedFormatsDuration: 300 * time.Second, // 5分钟缓存
+		timeSyncInterval:      30 * time.Second,
+		recvWindow:            futures.WithRecvWindow(5000), // 忽略服务器与本地时间差
 	}
 
 	if err := trader.syncServerTime(context.Background(), true); err != nil {
@@ -108,33 +116,6 @@ func (t *FuturesTrader) GetBalance() (map[string]interface{}, error) {
 	t.cachedBalance = result
 	t.balanceCacheTime = time.Now()
 	t.balanceCacheMutex.Unlock()
-
-	return result, nil
-}
-
-// GetOpenOrder 获取所有挂单
-func (t *FuturesTrader) GetOpenOrder(symbol string) ([]map[string]interface{}, error) {
-	var openOrders []*futures.Order
-	openOrders, err := t.client.NewListOpenOrdersService().Symbol(symbol).Do(context.Background(), t.recvWindow)
-	if err != nil {
-		return nil, fmt.Errorf("获取：%s挂单失败: %w", symbol, err)
-	}
-
-	var result []map[string]interface{}
-	for _, pos := range openOrders {
-		posMap := make(map[string]interface{})
-		posMap["symbol"] = pos.Symbol
-		posMap["orderId"] = pos.OrderID                                              //系统订单号
-		posMap["avgPrice"], _ = strconv.ParseFloat(pos.AvgPrice, 64)                 // 平均成交价
-		posMap["executedQuantity"], _ = strconv.ParseFloat(pos.ExecutedQuantity, 64) // 成交量
-		// posMap["markPrice"], _ = strconv.ParseFloat(pos.MarkPrice, 64)               // 当前标记价格
-		// posMap["unRealizedProfit"], _ = strconv.ParseFloat(pos.UnRealizedProfit, 64) // 持仓未实现盈亏
-		// posMap["leverage"], _ = strconv.ParseFloat(pos.Leverage, 64)                 // 当前杠杆倍数
-		// posMap["liquidationPrice"], _ = strconv.ParseFloat(pos.LiquidationPrice, 64) // 参考强平价格
-		posMap["side"] = pos.Side // 买卖方向
-
-		result = append(result, posMap)
-	}
 
 	return result, nil
 }
@@ -296,7 +277,7 @@ func (t *FuturesTrader) OpenLong(symbol string, quantity float64, leverage int) 
 	// 注意：仓位模式应该由调用方（AutoTrader）在开仓前通过 SetMarginMode 设置
 
 	// 格式化数量到正确精度
-	quantityStr, err := t.FormatQuantity(symbol, quantity)
+	quantityStr, err := t.FormatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +323,7 @@ func (t *FuturesTrader) OpenShort(symbol string, quantity float64, leverage int)
 	// 注意：仓位模式应该由调用方（AutoTrader）在开仓前通过 SetMarginMode 设置
 
 	// 格式化数量到正确精度
-	quantityStr, err := t.FormatQuantity(symbol, quantity)
+	quantityStr, err := t.FormatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +376,7 @@ func (t *FuturesTrader) CloseLong(symbol string, quantity float64, isPartial boo
 	}
 
 	// 格式化数量
-	quantityStr, err := t.FormatQuantity(symbol, quantity)
+	quantityStr, err := t.FormatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +433,7 @@ func (t *FuturesTrader) CloseShort(symbol string, quantity float64, isPartial bo
 	}
 
 	// 格式化数量
-	quantityStr, err := t.FormatQuantity(symbol, quantity)
+	quantityStr, err := t.FormatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return nil, err
 	}
@@ -542,7 +523,7 @@ func (t *FuturesTrader) SetStopLoss(symbol string, positionSide string, quantity
 	}
 
 	// 格式化数量
-	quantityStr, err := t.FormatQuantity(symbol, quantity)
+	quantityStr, err := t.FormatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return err
 	}
@@ -580,7 +561,11 @@ func (t *FuturesTrader) SetTrailingStopLoss(symbol string, positionSide string, 
 	}
 
 	// 格式化数量
-	quantityStr, err := t.FormatQuantity(symbol, quantity)
+	quantityStr, err := t.FormatQuantity(symbol, quantity, "qty")
+	if err != nil {
+		return err
+	}
+	activationPriceStr, err := t.FormatQuantity(symbol, activationPrice, "price")
 	if err != nil {
 		return err
 	}
@@ -593,7 +578,7 @@ func (t *FuturesTrader) SetTrailingStopLoss(symbol string, positionSide string, 
 		Type(futures.OrderTypeTrailingStopMarket).
 		CallbackRate(fmt.Sprintf("%.1f", callbackRate)).
 		Quantity(quantityStr).
-		ActivationPrice(fmt.Sprintf("%.8f", activationPrice)).
+		ActivationPrice(activationPriceStr).
 		WorkingType(futures.WorkingTypeContractPrice).
 		Do(context.Background(), t.recvWindow)
 
@@ -619,7 +604,7 @@ func (t *FuturesTrader) SetTakeProfit(symbol string, positionSide string, quanti
 	}
 
 	// 格式化数量
-	quantityStr, err := t.FormatQuantity(symbol, quantity)
+	quantityStr, err := t.FormatQuantity(symbol, quantity, "qty")
 	if err != nil {
 		return err
 	}
@@ -698,28 +683,49 @@ func (t *FuturesTrader) CancelStopOrders(symbol string, orderSide string) error 
 }
 
 // GetSymbolPrecision 获取交易对的数量精度
-func (t *FuturesTrader) GetSymbolPrecision(symbol string) (int, error) {
+func (t *FuturesTrader) GetSymbolPrecision(symbol string, precisionType string) (int, error) {
+	t.formatsCacheMutex.RLock()
+	if t.cachedFormats != nil && time.Since(t.formatsCacheTime) < t.cachedFormatsDuration {
+		cacheAge := time.Since(t.formatsCacheTime)
+		t.formatsCacheMutex.RUnlock()
+		log.Printf("✓ 使用缓存的持仓信息（缓存时间: %.1f秒前）", cacheAge.Seconds())
+		return t.cachedFormats[symbol][precisionType], nil
+	}
+	t.formatsCacheMutex.RUnlock()
+
 	exchangeInfo, err := t.client.NewExchangeInfoService().Do(context.Background(), t.recvWindow)
 	if err != nil {
 		return 0, fmt.Errorf("获取交易规则失败: %w", err)
 	}
 
+	result := make(map[string]map[string]int)
 	for _, s := range exchangeInfo.Symbols {
-		if s.Symbol == symbol {
-			// 从LOT_SIZE filter获取精度
-			for _, filter := range s.Filters {
-				if filter["filterType"] == "LOT_SIZE" {
-					stepSize := filter["stepSize"].(string)
-					precision := calculatePrecision(stepSize)
-					log.Printf("  %s 数量精度: %d (stepSize: %s)", symbol, precision, stepSize)
-					return precision, nil
-				}
+		precisionData := make(map[string]int)
+		for _, filter := range s.Filters {
+			// 从LOT_SIZE filter获取数量精度
+			if filter["filterType"] == "LOT_SIZE" {
+				stepSize := filter["stepSize"].(string)
+				precision := calculatePrecision(stepSize)
+				precisionData["qty"] = precision
 			}
+			// 从PRICE_FILTER filter获取价格精度
+			if filter["filterType"] == "PRICE_FILTER" {
+				tickSize := filter["tickSize"].(string)
+				precision := calculatePrecision(tickSize)
+				precisionData["price"] = precision
+			}
+			result[s.Symbol] = precisionData
 		}
 	}
 
+	// 更新缓存
+	t.formatsCacheMutex.Lock()
+	t.cachedFormats = result
+	t.formatsCacheTime = time.Now()
+	t.formatsCacheMutex.Unlock()
+
 	log.Printf("  ⚠ %s 未找到精度信息，使用默认精度3", symbol)
-	return 3, nil // 默认精度为3
+	return result[symbol][precisionType], nil // 默认精度为3
 }
 
 // calculatePrecision 从stepSize计算精度
@@ -766,8 +772,8 @@ func trimTrailingZeros(s string) string {
 }
 
 // FormatQuantity 格式化数量到正确的精度
-func (t *FuturesTrader) FormatQuantity(symbol string, quantity float64) (string, error) {
-	precision, err := t.GetSymbolPrecision(symbol)
+func (t *FuturesTrader) FormatQuantity(symbol string, quantity float64, precisionType string) (string, error) {
+	precision, err := t.GetSymbolPrecision(symbol, precisionType)
 	if err != nil {
 		// 如果获取失败，使用默认格式
 		return fmt.Sprintf("%.3f", quantity), nil

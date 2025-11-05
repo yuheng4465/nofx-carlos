@@ -46,5 +46,5 @@ type Trader interface {
 	CancelStopOrders(symbol string, orderSide string) error
 
 	// FormatQuantity 格式化数量到正确的精度
-	FormatQuantity(symbol string, quantity float64) (string, error)
+	FormatQuantity(symbol string, quantity float64, precisionType string) (string, error)
 }
