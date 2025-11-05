@@ -32,6 +32,7 @@ type FuturesTrader struct {
 	timeSyncMutex    sync.Mutex
 	lastTimeSync     time.Time
 	timeSyncInterval time.Duration
+	recvWindow       futures.RequestOption
 }
 
 // NewFuturesTrader 创建合约交易器
@@ -42,6 +43,7 @@ func NewFuturesTrader(apiKey, secretKey string) *FuturesTrader {
 		client:           client,
 		cacheDuration:    15 * time.Second, // 15秒缓存
 		timeSyncInterval: 30 * time.Second,
+		recvWindow:       futures.WithRecvWindow(3000), // 忽略服务器与本地时间差
 	}
 
 	if err := trader.syncServerTime(context.Background(), true); err != nil {
@@ -85,7 +87,7 @@ func (t *FuturesTrader) GetBalance() (map[string]interface{}, error) {
 
 	// 缓存过期或不存在，调用API
 	log.Printf("🔄 缓存过期，正在调用币安API获取账户余额...")
-	account, err := t.client.NewGetAccountService().Do(context.Background())
+	account, err := t.client.NewGetAccountService().Do(context.Background(), t.recvWindow)
 	if err != nil {
 		log.Printf("❌ 币安API调用失败: %v", err)
 		return nil, fmt.Errorf("获取账户信息失败: %w", err)
@@ -110,21 +112,50 @@ func (t *FuturesTrader) GetBalance() (map[string]interface{}, error) {
 	return result, nil
 }
 
-// GetPositions 获取所有持仓（带缓存）
-func (t *FuturesTrader) GetPositions() ([]map[string]interface{}, error) {
-	// 先检查缓存是否有效
-	t.positionsCacheMutex.RLock()
-	if t.cachedPositions != nil && time.Since(t.positionsCacheTime) < t.cacheDuration {
-		cacheAge := time.Since(t.positionsCacheTime)
-		t.positionsCacheMutex.RUnlock()
-		log.Printf("✓ 使用缓存的持仓信息（缓存时间: %.1f秒前）", cacheAge.Seconds())
-		return t.cachedPositions, nil
+// GetOpenOrder 获取所有挂单
+func (t *FuturesTrader) GetOpenOrder(symbol string) ([]map[string]interface{}, error) {
+	var openOrders []*futures.Order
+	openOrders, err := t.client.NewListOpenOrdersService().Symbol(symbol).Do(context.Background(), t.recvWindow)
+	if err != nil {
+		return nil, fmt.Errorf("获取：%s挂单失败: %w", symbol, err)
 	}
-	t.positionsCacheMutex.RUnlock()
+
+	var result []map[string]interface{}
+	for _, pos := range openOrders {
+		posMap := make(map[string]interface{})
+		posMap["symbol"] = pos.Symbol
+		posMap["orderId"] = pos.OrderID                                              //系统订单号
+		posMap["avgPrice"], _ = strconv.ParseFloat(pos.AvgPrice, 64)                 // 平均成交价
+		posMap["executedQuantity"], _ = strconv.ParseFloat(pos.ExecutedQuantity, 64) // 成交量
+		// posMap["markPrice"], _ = strconv.ParseFloat(pos.MarkPrice, 64)               // 当前标记价格
+		// posMap["unRealizedProfit"], _ = strconv.ParseFloat(pos.UnRealizedProfit, 64) // 持仓未实现盈亏
+		// posMap["leverage"], _ = strconv.ParseFloat(pos.Leverage, 64)                 // 当前杠杆倍数
+		// posMap["liquidationPrice"], _ = strconv.ParseFloat(pos.LiquidationPrice, 64) // 参考强平价格
+		posMap["side"] = pos.Side // 买卖方向
+
+		result = append(result, posMap)
+	}
+
+	return result, nil
+}
+
+// GetPositions 获取所有持仓（带缓存）
+func (t *FuturesTrader) GetPositions(isReal bool) ([]map[string]interface{}, error) {
+	// 先检查缓存是否有效
+	if !isReal {
+		t.positionsCacheMutex.RLock()
+		if t.cachedPositions != nil && time.Since(t.positionsCacheTime) < t.cacheDuration {
+			cacheAge := time.Since(t.positionsCacheTime)
+			t.positionsCacheMutex.RUnlock()
+			log.Printf("✓ 使用缓存的持仓信息（缓存时间: %.1f秒前）", cacheAge.Seconds())
+			return t.cachedPositions, nil
+		}
+		t.positionsCacheMutex.RUnlock()
+	}
 
 	// 缓存过期或不存在，调用API
 	log.Printf("🔄 缓存过期，正在调用币安API获取持仓信息...")
-	positions, err := t.client.NewGetPositionRiskService().Do(context.Background())
+	positions, err := t.client.NewGetPositionRiskService().Do(context.Background(), t.recvWindow)
 	if err != nil {
 		return nil, fmt.Errorf("获取持仓失败: %w", err)
 	}
@@ -138,12 +169,12 @@ func (t *FuturesTrader) GetPositions() ([]map[string]interface{}, error) {
 
 		posMap := make(map[string]interface{})
 		posMap["symbol"] = pos.Symbol
-		posMap["positionAmt"], _ = strconv.ParseFloat(pos.PositionAmt, 64)
-		posMap["entryPrice"], _ = strconv.ParseFloat(pos.EntryPrice, 64)
-		posMap["markPrice"], _ = strconv.ParseFloat(pos.MarkPrice, 64)
-		posMap["unRealizedProfit"], _ = strconv.ParseFloat(pos.UnRealizedProfit, 64)
-		posMap["leverage"], _ = strconv.ParseFloat(pos.Leverage, 64)
-		posMap["liquidationPrice"], _ = strconv.ParseFloat(pos.LiquidationPrice, 64)
+		posMap["positionAmt"], _ = strconv.ParseFloat(pos.PositionAmt, 64)           // 头寸数量，符号代表多空方向, 正数为多，负数为空
+		posMap["entryPrice"], _ = strconv.ParseFloat(pos.EntryPrice, 64)             // 开仓均价
+		posMap["markPrice"], _ = strconv.ParseFloat(pos.MarkPrice, 64)               // 当前标记价格
+		posMap["unRealizedProfit"], _ = strconv.ParseFloat(pos.UnRealizedProfit, 64) // 持仓未实现盈亏
+		posMap["leverage"], _ = strconv.ParseFloat(pos.Leverage, 64)                 // 当前杠杆倍数
+		posMap["liquidationPrice"], _ = strconv.ParseFloat(pos.LiquidationPrice, 64) // 参考强平价格
 
 		// 判断方向
 		if posAmt > 0 {
@@ -177,7 +208,7 @@ func (t *FuturesTrader) SetMarginMode(symbol string, isCrossMargin bool) error {
 	err := t.client.NewChangeMarginTypeService().
 		Symbol(symbol).
 		MarginType(marginType).
-		Do(context.Background())
+		Do(context.Background(), t.recvWindow)
 
 	marginModeStr := "全仓"
 	if !isCrossMargin {
@@ -208,7 +239,7 @@ func (t *FuturesTrader) SetMarginMode(symbol string, isCrossMargin bool) error {
 func (t *FuturesTrader) SetLeverage(symbol string, leverage int) error {
 	// 先尝试获取当前杠杆（从持仓信息）
 	currentLeverage := 0
-	positions, err := t.GetPositions()
+	positions, err := t.GetPositions(false)
 	if err == nil {
 		for _, pos := range positions {
 			if pos["symbol"] == symbol {
@@ -230,7 +261,7 @@ func (t *FuturesTrader) SetLeverage(symbol string, leverage int) error {
 	_, err = t.client.NewChangeLeverageService().
 		Symbol(symbol).
 		Leverage(leverage).
-		Do(context.Background())
+		Do(context.Background(), t.recvWindow)
 
 	if err != nil {
 		// 如果错误信息包含"No need to change"，说明杠杆已经是目标值
@@ -277,7 +308,8 @@ func (t *FuturesTrader) OpenLong(symbol string, quantity float64, leverage int) 
 		PositionSide(futures.PositionSideTypeLong).
 		Type(futures.OrderTypeMarket).
 		Quantity(quantityStr).
-		Do(context.Background())
+		NewOrderResponseType("RESULT").
+		Do(context.Background(), t.recvWindow)
 
 	if err != nil {
 		return nil, fmt.Errorf("开多仓失败: %w", err)
@@ -290,6 +322,8 @@ func (t *FuturesTrader) OpenLong(symbol string, quantity float64, leverage int) 
 	result["orderId"] = order.OrderID
 	result["symbol"] = order.Symbol
 	result["status"] = order.Status
+	result["avgPrice"], _ = strconv.ParseFloat(order.AvgPrice, 64)
+
 	return result, nil
 }
 
@@ -320,7 +354,8 @@ func (t *FuturesTrader) OpenShort(symbol string, quantity float64, leverage int)
 		PositionSide(futures.PositionSideTypeShort).
 		Type(futures.OrderTypeMarket).
 		Quantity(quantityStr).
-		Do(context.Background())
+		NewOrderResponseType("RESULT").
+		Do(context.Background(), t.recvWindow)
 
 	if err != nil {
 		return nil, fmt.Errorf("开空仓失败: %w", err)
@@ -333,6 +368,8 @@ func (t *FuturesTrader) OpenShort(symbol string, quantity float64, leverage int)
 	result["orderId"] = order.OrderID
 	result["symbol"] = order.Symbol
 	result["status"] = order.Status
+	result["avgPrice"], _ = strconv.ParseFloat(order.AvgPrice, 64)
+
 	return result, nil
 }
 
@@ -340,7 +377,7 @@ func (t *FuturesTrader) OpenShort(symbol string, quantity float64, leverage int)
 func (t *FuturesTrader) CloseLong(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error) {
 	// 如果数量为0，获取当前持仓数量
 	if quantity == 0 {
-		positions, err := t.GetPositions()
+		positions, err := t.GetPositions(false)
 		if err != nil {
 			return nil, err
 		}
@@ -370,7 +407,7 @@ func (t *FuturesTrader) CloseLong(symbol string, quantity float64, isPartial boo
 		PositionSide(futures.PositionSideTypeLong).
 		Type(futures.OrderTypeMarket).
 		Quantity(quantityStr).
-		Do(context.Background())
+		Do(context.Background(), t.recvWindow)
 
 	if err != nil {
 		return nil, fmt.Errorf("平多仓失败: %w", err)
@@ -397,7 +434,7 @@ func (t *FuturesTrader) CloseLong(symbol string, quantity float64, isPartial boo
 func (t *FuturesTrader) CloseShort(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error) {
 	// 如果数量为0，获取当前持仓数量
 	if quantity == 0 {
-		positions, err := t.GetPositions()
+		positions, err := t.GetPositions(false)
 		if err != nil {
 			return nil, err
 		}
@@ -427,7 +464,7 @@ func (t *FuturesTrader) CloseShort(symbol string, quantity float64, isPartial bo
 		PositionSide(futures.PositionSideTypeShort).
 		Type(futures.OrderTypeMarket).
 		Quantity(quantityStr).
-		Do(context.Background())
+		Do(context.Background(), t.recvWindow)
 
 	if err != nil {
 		return nil, fmt.Errorf("平空仓失败: %w", err)
@@ -454,7 +491,7 @@ func (t *FuturesTrader) CloseShort(symbol string, quantity float64, isPartial bo
 func (t *FuturesTrader) CancelAllOrders(symbol string) error {
 	err := t.client.NewCancelAllOpenOrdersService().
 		Symbol(symbol).
-		Do(context.Background())
+		Do(context.Background(), t.recvWindow)
 
 	if err != nil {
 		return fmt.Errorf("取消挂单失败: %w", err)
@@ -466,7 +503,7 @@ func (t *FuturesTrader) CancelAllOrders(symbol string) error {
 
 // GetMarketPrice 获取市场价格
 func (t *FuturesTrader) GetMarketPrice(symbol string) (float64, error) {
-	prices, err := t.client.NewListPricesService().Symbol(symbol).Do(context.Background())
+	prices, err := t.client.NewListPricesService().Symbol(symbol).Do(context.Background(), t.recvWindow)
 	if err != nil {
 		return 0, fmt.Errorf("获取价格失败: %w", err)
 	}
@@ -491,7 +528,7 @@ func (t *FuturesTrader) CalculatePositionSize(balance, riskPercent, price float6
 	return quantity
 }
 
-// SetStopLoss 设置止损单
+// SetStopLoss 设置止损单（使用追踪止损）
 func (t *FuturesTrader) SetStopLoss(symbol string, positionSide string, quantity, stopPrice float64) error {
 	var side futures.SideType
 	var posSide futures.PositionSideType
@@ -519,13 +556,52 @@ func (t *FuturesTrader) SetStopLoss(symbol string, positionSide string, quantity
 		Quantity(quantityStr).
 		WorkingType(futures.WorkingTypeContractPrice).
 		ClosePosition(true).
-		Do(context.Background())
+		Do(context.Background(), t.recvWindow)
 
 	if err != nil {
 		return fmt.Errorf("设置止损失败: %w", err)
 	}
 
 	log.Printf("  止损价设置: %.4f", stopPrice)
+	return nil
+}
+
+// SetStopLoss 设置跟踪止损单
+func (t *FuturesTrader) SetTrailingStopLoss(symbol string, positionSide string, quantity, activationPrice float64, callbackRate float64) error {
+	var side futures.SideType
+	var posSide futures.PositionSideType
+
+	if positionSide == "LONG" {
+		side = futures.SideTypeSell
+		posSide = futures.PositionSideTypeLong
+	} else {
+		side = futures.SideTypeBuy
+		posSide = futures.PositionSideTypeShort
+	}
+
+	// 格式化数量
+	quantityStr, err := t.FormatQuantity(symbol, quantity)
+	if err != nil {
+		return err
+	}
+
+	//callbackRate追踪止损回调比例，可取值范围[0.1, 10],其中 1代表1%
+	_, err = t.client.NewCreateOrderService().
+		Symbol(symbol).
+		Side(side).
+		PositionSide(posSide).
+		Type(futures.OrderTypeTrailingStopMarket).
+		CallbackRate(fmt.Sprintf("%.1f", callbackRate)).
+		Quantity(quantityStr).
+		ActivationPrice(fmt.Sprintf("%.8f", activationPrice)).
+		WorkingType(futures.WorkingTypeContractPrice).
+		Do(context.Background(), t.recvWindow)
+
+	if err != nil {
+		return fmt.Errorf("设置跟踪止损失败: %w", err)
+	}
+
+	log.Printf("  跟踪止损设置: %.4f", activationPrice)
 	return nil
 }
 
@@ -557,13 +633,14 @@ func (t *FuturesTrader) SetTakeProfit(symbol string, positionSide string, quanti
 		Quantity(quantityStr).
 		WorkingType(futures.WorkingTypeContractPrice).
 		ClosePosition(true).
-		Do(context.Background())
+		Do(context.Background(), t.recvWindow)
 
 	if err != nil {
 		return fmt.Errorf("设置止盈失败: %w", err)
 	}
 
 	log.Printf("  止盈价设置: %.4f", takeProfitPrice)
+
 	return nil
 }
 
@@ -572,7 +649,7 @@ func (t *FuturesTrader) CancelStopOrders(symbol string, orderSide string) error 
 	// 获取该币种的所有未完成订单
 	orders, err := t.client.NewListOpenOrdersService().
 		Symbol(symbol).
-		Do(context.Background())
+		Do(context.Background(), t.recvWindow)
 
 	if err != nil {
 		return fmt.Errorf("获取未完成订单失败: %w", err)
@@ -598,7 +675,7 @@ func (t *FuturesTrader) CancelStopOrders(symbol string, orderSide string) error 
 			_, err := t.client.NewCancelOrderService().
 				Symbol(symbol).
 				OrderID(order.OrderID).
-				Do(context.Background())
+				Do(context.Background(), t.recvWindow)
 
 			if err != nil {
 				log.Printf("  ⚠ 取消订单 %d 失败: %v", order.OrderID, err)
@@ -622,7 +699,7 @@ func (t *FuturesTrader) CancelStopOrders(symbol string, orderSide string) error 
 
 // GetSymbolPrecision 获取交易对的数量精度
 func (t *FuturesTrader) GetSymbolPrecision(symbol string) (int, error) {
-	exchangeInfo, err := t.client.NewExchangeInfoService().Do(context.Background())
+	exchangeInfo, err := t.client.NewExchangeInfoService().Do(context.Background(), t.recvWindow)
 	if err != nil {
 		return 0, fmt.Errorf("获取交易规则失败: %w", err)
 	}

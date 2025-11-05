@@ -7,7 +7,7 @@ type Trader interface {
 	GetBalance() (map[string]interface{}, error)
 
 	// GetPositions 获取所有持仓
-	GetPositions() ([]map[string]interface{}, error)
+	GetPositions(isReal bool) ([]map[string]interface{}, error)
 
 	// OpenLong 开多仓
 	OpenLong(symbol string, quantity float64, leverage int) (map[string]interface{}, error)
@@ -32,6 +32,9 @@ type Trader interface {
 
 	// SetStopLoss 设置止损单
 	SetStopLoss(symbol string, positionSide string, quantity, stopPrice float64) error
+
+	// SetTrailingStopLoss 设置追踪止损单
+	SetTrailingStopLoss(symbol string, positionSide string, quantity, activationPrice float64, callbackRate float64) error
 
 	// SetTakeProfit 设置止盈单
 	SetTakeProfit(symbol string, positionSide string, quantity, takeProfitPrice float64) error

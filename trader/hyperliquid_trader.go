@@ -124,7 +124,7 @@ func (t *HyperliquidTrader) GetBalance() (map[string]interface{}, error) {
 }
 
 // GetPositions 获取所有持仓
-func (t *HyperliquidTrader) GetPositions() ([]map[string]interface{}, error) {
+func (t *HyperliquidTrader) GetPositions(isReal bool) ([]map[string]interface{}, error) {
 	// 获取账户状态
 	accountState, err := t.exchange.Info().UserState(t.ctx, t.walletAddr)
 	if err != nil {
@@ -337,7 +337,7 @@ func (t *HyperliquidTrader) OpenShort(symbol string, quantity float64, leverage 
 func (t *HyperliquidTrader) CloseLong(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error) {
 	// 如果数量为0，获取当前持仓数量
 	if quantity == 0 {
-		positions, err := t.GetPositions()
+		positions, err := t.GetPositions(false)
 		if err != nil {
 			return nil, err
 		}
@@ -412,7 +412,7 @@ func (t *HyperliquidTrader) CloseLong(symbol string, quantity float64, isPartial
 func (t *HyperliquidTrader) CloseShort(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error) {
 	// 如果数量为0，获取当前持仓数量
 	if quantity == 0 {
-		positions, err := t.GetPositions()
+		positions, err := t.GetPositions(false)
 		if err != nil {
 			return nil, err
 		}
@@ -526,6 +526,11 @@ func (t *HyperliquidTrader) GetMarketPrice(symbol string) (float64, error) {
 	}
 
 	return 0, fmt.Errorf("未找到 %s 的价格", symbol)
+}
+
+// SetStopLoss 设置跟踪止损单
+func (t *HyperliquidTrader) SetTrailingStopLoss(symbol string, positionSide string, quantity, activationPrice float64, callbackRate float64) error {
+	return nil
 }
 
 // SetStopLoss 设置止损单

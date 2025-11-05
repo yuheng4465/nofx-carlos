@@ -467,7 +467,7 @@ func (t *AsterTrader) GetBalance() (map[string]interface{}, error) {
 }
 
 // GetPositions 获取持仓信息
-func (t *AsterTrader) GetPositions() ([]map[string]interface{}, error) {
+func (t *AsterTrader) GetPositions(isReal bool) ([]map[string]interface{}, error) {
 	params := make(map[string]interface{})
 	body, err := t.request("GET", "/fapi/v3/positionRisk", params)
 	if err != nil {
@@ -658,7 +658,7 @@ func (t *AsterTrader) OpenShort(symbol string, quantity float64, leverage int) (
 func (t *AsterTrader) CloseLong(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error) {
 	// 如果数量为0，获取当前持仓数量
 	if quantity == 0 {
-		positions, err := t.GetPositions()
+		positions, err := t.GetPositions(false)
 		if err != nil {
 			return nil, err
 		}
@@ -743,7 +743,7 @@ func (t *AsterTrader) CloseLong(symbol string, quantity float64, isPartial bool)
 func (t *AsterTrader) CloseShort(symbol string, quantity float64, isPartial bool) (map[string]interface{}, error) {
 	// 如果数量为0，获取当前持仓数量
 	if quantity == 0 {
-		positions, err := t.GetPositions()
+		positions, err := t.GetPositions(false)
 		if err != nil {
 			return nil, err
 		}
@@ -892,6 +892,11 @@ func (t *AsterTrader) GetMarketPrice(symbol string) (float64, error) {
 	}
 
 	return strconv.ParseFloat(priceStr, 64)
+}
+
+// SetStopLoss 设置跟踪止损单
+func (t *AsterTrader) SetTrailingStopLoss(symbol string, positionSide string, quantity, activationPrice float64, callbackRate float64) error {
+	return nil
 }
 
 // SetStopLoss 设置止损
