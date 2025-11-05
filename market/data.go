@@ -277,6 +277,15 @@ func calculateIntradaySeries(klines []Kline) *IntradayData {
 		}
 	}
 
+	// 计算布林带带宽（Bollinger Bandwidth）
+	data.BollingerBandwidth = CalculateBollingerBandwidth(klines, 20, 2.0)
+
+	// 成交量加权平均价（VWAP）
+	data.VWAPValues = CalculateVWAP(klines)
+
+	// CalculateCMF 计算蔡金资金流
+	data.CMFValues = CalculateCMF(klines, 20)
+
 	return data
 }
 
@@ -322,6 +331,15 @@ func calculateMidTermSeries15m(klines []Kline) *MidTermData15m {
 		}
 	}
 
+	// 计算布林带带宽（Bollinger Bandwidth）
+	data.BollingerBandwidth = CalculateBollingerBandwidth(klines, 20, 2.0)
+
+	// 成交量加权平均价（VWAP）
+	data.VWAPValues = CalculateVWAP(klines)
+
+	// CalculateCMF 计算蔡金资金流
+	data.CMFValues = CalculateCMF(klines, 20)
+
 	return data
 }
 
@@ -366,6 +384,15 @@ func calculateMidTermSeries1h(klines []Kline) *MidTermData1h {
 			data.RSI14Values = append(data.RSI14Values, rsi14)
 		}
 	}
+
+	// 计算布林带带宽（Bollinger Bandwidth）
+	data.BollingerBandwidth = CalculateBollingerBandwidth(klines, 20, 2.0)
+
+	// 成交量加权平均价（VWAP）
+	data.VWAPValues = CalculateVWAP(klines)
+
+	// CalculateCMF 计算蔡金资金流
+	data.CMFValues = CalculateCMF(klines, 20)
 
 	return data
 }
@@ -421,6 +448,15 @@ func calculateLongerTermData(klines []Kline) *LongerTermData {
 		}
 	}
 
+	// 计算布林带带宽（Bollinger Bandwidth）
+	data.BollingerBandwidth = CalculateBollingerBandwidth(klines, 20, 2.0)
+
+	// 成交量加权平均价（VWAP）
+	data.VWAPValues = CalculateVWAP(klines)
+
+	// CalculateCMF 计算蔡金资金流
+	data.CMFValues = CalculateCMF(klines, 20)
+
 	return data
 }
 
@@ -458,6 +494,132 @@ func CalculateBuySellRatio(trades []Trade) float64 {
 
 	ratio := totalBuyVolume / totalSellVolume
 	return ratio
+}
+
+// CalculateBollingerBandwidth 计算布林带带宽百分比
+func CalculateBollingerBandwidth(klines []Kline, period int, multiplier float64) []float64 {
+	// 提取收盘价
+	var closes []float64
+	for _, k := range klines {
+		closes = append(closes, k.Close)
+	}
+
+	if len(closes) < 50 {
+		return nil
+	}
+
+	if len(closes) < period {
+		return nil
+	}
+
+	bandwidths := make([]float64, len(closes))
+
+	for i := period - 1; i < len(closes); i++ {
+		// 计算中轨 (SMA)
+		sum := 0.0
+		for j := i - period + 1; j <= i; j++ {
+			sum += closes[j]
+		}
+		midBand := sum / float64(period)
+
+		// 计算标准差
+		variance := 0.0
+		for j := i - period + 1; j <= i; j++ {
+			deviation := closes[j] - midBand
+			variance += deviation * deviation
+		}
+		stdDev := math.Sqrt(variance / float64(period))
+
+		// 计算上下轨
+		upperBand := midBand + multiplier*stdDev
+		lowerBand := midBand - multiplier*stdDev
+
+		// 计算带宽百分比: (上轨 - 下轨) / 中轨 * 100%
+		bandwidths[i] = ((upperBand - lowerBand) / midBand) * 100
+	}
+	return bandwidths
+}
+
+// CalculateVWAP 计算成交量加权平均价
+func CalculateVWAP(data []Kline) []float64 {
+	vwap := make([]float64, len(data))
+	cumulativeVolume := 0.0
+	cumulativeTypicalPriceVolume := 0.0
+
+	for i, point := range data {
+		// 典型价 = (高 + 低 + 收) / 3
+		typicalPrice := (point.High + point.Low + point.Close) / 3
+		typicalPriceVolume := typicalPrice * point.Volume
+
+		cumulativeTypicalPriceVolume += typicalPriceVolume
+		cumulativeVolume += point.Volume
+
+		if cumulativeVolume > 0 {
+			vwap[i] = cumulativeTypicalPriceVolume / cumulativeVolume
+		}
+	}
+	return vwap
+}
+
+// CalculateCMF 计算蔡金资金流
+func CalculateCMF(data []Kline, period int) []float64 {
+	cmf := make([]float64, len(data))
+
+	for i := period - 1; i < len(data); i++ {
+		sumMoneyFlowVolume := 0.0
+		sumVolume := 0.0
+
+		for j := i - period + 1; j <= i; j++ {
+			point := data[j]
+			// 资金流乘数 = [(收盘价 - 最低价) - (最高价 - 收盘价)] / (最高价 - 最低价)
+			moneyFlowMultiplier := ((point.Close - point.Low) - (point.High - point.Close)) / (point.High - point.Low)
+			moneyFlowVolume := moneyFlowMultiplier * point.Volume
+
+			sumMoneyFlowVolume += moneyFlowVolume
+			sumVolume += point.Volume
+		}
+
+		if sumVolume > 0 {
+			cmf[i] = sumMoneyFlowVolume / sumVolume
+		}
+	}
+	return cmf
+}
+
+// CalculateOBV 计算能量潮
+func CalculateOBV(klines []Kline, period int) ([]float64, error) {
+	// 提取收盘价
+	// 提取收盘价和成交量
+	var closes, volumes []float64
+	for _, point := range klines {
+		closes = append(closes, point.Close)
+		volumes = append(volumes, point.Volume)
+	}
+
+	if len(closes) < 50 {
+		return nil, fmt.Errorf("数据少于50条")
+	}
+
+	if len(closes) < period {
+		return nil, fmt.Errorf("数据点数不足")
+	}
+
+	obv := make([]float64, len(closes))
+	obv[0] = volumes[0] // 初始OBV为第一天的成交量
+
+	for i := 1; i < len(closes); i++ {
+		if closes[i] > closes[i-1] {
+			// 价格上涨，成交量加入OBV
+			obv[i] = obv[i-1] + volumes[i]
+		} else if closes[i] < closes[i-1] {
+			// 价格下跌，成交量从OBV中减去
+			obv[i] = obv[i-1] - volumes[i]
+		} else {
+			// 价格持平，OBV不变
+			obv[i] = obv[i-1]
+		}
+	}
+	return obv, nil
 }
 
 // getOpenInterestData 获取OI数据（获取当前未平仓合约数）
@@ -649,6 +811,18 @@ func Format(data *Data) string {
 		if len(data.IntradaySeries.RSI14Values) > 0 {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.IntradaySeries.RSI14Values)))
 		}
+
+		if len(data.IntradaySeries.BollingerBandwidth) > 0 {
+			sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.IntradaySeries.BollingerBandwidth)))
+		}
+
+		if len(data.IntradaySeries.VWAPValues) > 0 {
+			sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.IntradaySeries.VWAPValues)))
+		}
+
+		if len(data.IntradaySeries.CMFValues) > 0 {
+			sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.IntradaySeries.CMFValues)))
+		}
 	}
 
 	if data.MidTermSeries15m != nil {
@@ -672,6 +846,18 @@ func Format(data *Data) string {
 
 		if len(data.MidTermSeries15m.RSI14Values) > 0 {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.MidTermSeries15m.RSI14Values)))
+		}
+
+		if len(data.MidTermSeries15m.BollingerBandwidth) > 0 {
+			sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries15m.BollingerBandwidth)))
+		}
+
+		if len(data.MidTermSeries15m.VWAPValues) > 0 {
+			sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.MidTermSeries15m.VWAPValues)))
+		}
+
+		if len(data.MidTermSeries15m.CMFValues) > 0 {
+			sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries15m.CMFValues)))
 		}
 	}
 
@@ -697,6 +883,18 @@ func Format(data *Data) string {
 		if len(data.MidTermSeries1h.RSI14Values) > 0 {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.MidTermSeries1h.RSI14Values)))
 		}
+
+		if len(data.MidTermSeries1h.BollingerBandwidth) > 0 {
+			sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries1h.BollingerBandwidth)))
+		}
+
+		if len(data.MidTermSeries1h.VWAPValues) > 0 {
+			sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.MidTermSeries1h.VWAPValues)))
+		}
+
+		if len(data.MidTermSeries1h.CMFValues) > 0 {
+			sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries1h.CMFValues)))
+		}
 	}
 
 	if data.LongerTermContext != nil {
@@ -717,6 +915,18 @@ func Format(data *Data) string {
 
 		if len(data.LongerTermContext.RSI14Values) > 0 {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.LongerTermContext.RSI14Values)))
+		}
+
+		if len(data.LongerTermContext.BollingerBandwidth) > 0 {
+			sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.LongerTermContext.BollingerBandwidth)))
+		}
+
+		if len(data.LongerTermContext.VWAPValues) > 0 {
+			sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.LongerTermContext.VWAPValues)))
+		}
+
+		if len(data.LongerTermContext.CMFValues) > 0 {
+			sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.LongerTermContext.CMFValues)))
 		}
 	}
 

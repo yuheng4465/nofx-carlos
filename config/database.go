@@ -138,6 +138,28 @@ func (d *Database) createTables() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
+		// 订单表
+		`CREATE TABLE IF NOT EXISTS orders (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL DEFAULT 'default',
+			order_id TEXT NOT NULL,
+			ai_model_id TEXT UNIQUE NOT NULL,
+			exchange_id TEXT UNIQUE NOT NULL,
+			symbol TEXT UNIQUE NOT NULL,
+			side TEXT NOT NULL,
+			avg_price TEXT NOT NULL,
+			close_price TEXT NOT NULL,
+			qty TEXT NOT NULL,
+			leverage TEXT NOT NULL,
+			profit TEXT NOT NULL,
+			is_close BOOLEAN DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+			FOREIGN KEY (ai_model_id) REFERENCES ai_models(id),
+			FOREIGN KEY (exchange_id) REFERENCES exchanges(id)
+		)`,
+
 		// 触发器：自动更新 updated_at
 		`CREATE TRIGGER IF NOT EXISTS update_users_updated_at
 			AFTER UPDATE ON users
@@ -173,6 +195,12 @@ func (d *Database) createTables() error {
 			AFTER UPDATE ON system_config
 			BEGIN
 				UPDATE system_config SET updated_at = CURRENT_TIMESTAMP WHERE key = NEW.key;
+			END`,
+
+		`CREATE TRIGGER IF NOT EXISTS update_orders_updated_at
+			AFTER UPDATE ON orders
+			BEGIN
+				UPDATE orders SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 			END`,
 	}
 
@@ -442,6 +470,24 @@ type UserSignalSource struct {
 	OITopURL    string    `json:"oi_top_url"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Order 订单（数据库实体）
+type Order struct {
+	ID         string    `json:"id"`
+	OrderId    string    `json:"order_id"`    // 订单号
+	AIModelID  string    `json:"ai_model_id"` // 决策AI模型
+	ExchangeID string    `json:"exchange_id"` // 交易平台
+	Symbol     string    `json:"symbol"`      // 交易货币
+	Side       string    `json:"side"`        // 订单方向
+	AvgPrice   float64   `json:"avg_price"`   // 开仓价格
+	ClosePrice float64   `json:"close_price"` // 平仓价格
+	Quantity   float64   `json:"qty"`         // 下单数量
+	Leverage   int       `json:"leverage"`    // 杠杆
+	Profit     float64   `json:"profit"`      // 盈利
+	IsClose    bool      `json:"is_close"`    // 是否已经平仓
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // GenerateOTPSecret 生成OTP密钥

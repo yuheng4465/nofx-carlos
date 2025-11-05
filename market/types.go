@@ -29,42 +29,54 @@ type OIData struct {
 
 // IntradayData 日内数据(3分钟间隔)
 type IntradayData struct {
-	MidPrices   []float64
-	EMA20Values []float64
-	MACDValues  []float64
-	RSI7Values  []float64
-	RSI14Values []float64
+	MidPrices          []float64
+	EMA20Values        []float64
+	MACDValues         []float64
+	RSI7Values         []float64
+	RSI14Values        []float64
+	BollingerBandwidth []float64
+	VWAPValues         []float64
+	CMFValues          []float64
 }
 
 // MidTermData15m 15分钟时间框架数据 - 短期趋势过滤
 type MidTermData15m struct {
-	MidPrices   []float64
-	EMA20Values []float64
-	MACDValues  []float64
-	RSI7Values  []float64
-	RSI14Values []float64
+	MidPrices          []float64
+	EMA20Values        []float64
+	MACDValues         []float64
+	RSI7Values         []float64
+	RSI14Values        []float64
+	BollingerBandwidth []float64
+	VWAPValues         []float64
+	CMFValues          []float64
 }
 
 // MidTermData1h 1小时时间框架数据 - 中期趋势确认
 type MidTermData1h struct {
-	MidPrices   []float64
-	EMA20Values []float64
-	MACDValues  []float64
-	RSI7Values  []float64
-	RSI14Values []float64
+	MidPrices          []float64
+	EMA20Values        []float64
+	MACDValues         []float64
+	RSI7Values         []float64
+	RSI14Values        []float64
+	BollingerBandwidth []float64
+	VWAPValues         []float64
+	CMFValues          []float64
 }
 
 // LongerTermData 长期数据(4小时时间框架)
 type LongerTermData struct {
-	EMA20           float64
-	EMA50           float64
-	ATR3            float64
-	ATR14           float64
-	CurrentVolume   float64
-	AverageVolume   float64
-	AverageVolume20 float64
-	MACDValues      []float64
-	RSI14Values     []float64
+	EMA20              float64
+	EMA50              float64
+	ATR3               float64
+	ATR14              float64
+	CurrentVolume      float64
+	AverageVolume      float64
+	AverageVolume20    float64
+	MACDValues         []float64
+	RSI14Values        []float64
+	BollingerBandwidth []float64
+	VWAPValues         []float64
+	CMFValues          []float64
 }
 
 // Binance API 响应结构

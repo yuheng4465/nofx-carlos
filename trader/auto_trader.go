@@ -231,7 +231,7 @@ func NewAutoTrader(config AutoTraderConfig) (*AutoTrader, error) {
 		positionFirstSeenTime: make(map[string]int64),
 		lastPositions:         make(map[string]*PositionSnapshot),
 		callbackRate:          0.5,
-		activationPriceRate:   40,
+		activationPriceRate:   60,
 	}, nil
 }
 
@@ -751,12 +751,13 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *decision.Decision, act
 
 	// 设置追踪止损
 	avgPrice := order["avgPrice"].(float64)
-	activationPrice := decision.TakeProfit - (decision.TakeProfit-avgPrice)/(at.activationPriceRate/100)
+	activationPrice := decision.TakeProfit - (decision.TakeProfit-avgPrice)/(1-at.activationPriceRate/100)
 	// 回撤价格
 	callbackPrice := activationPrice * ((100 - at.callbackRate) / 100)
-	// 如果回撤后的价格比订单成交价还低则强制使用更高的激活价格
-	if callbackPrice <= avgPrice {
-		activationPrice = avgPrice * ((100 + at.callbackRate) / 100)
+	// 如果回撤后的价格比订单成交价还低则不设置
+	if callbackPrice <= avgPrice*1.005 {
+		log.Printf("  止盈太低设置追踪止损失败，开仓价格: %.8f, 回撤价格: %.8f, 回撤激活价格：%.8f", avgPrice, callbackPrice, activationPrice)
+		return nil
 	}
 	if err := at.trader.SetTrailingStopLoss(decision.Symbol, "LONG", quantity, activationPrice, at.callbackRate); err != nil {
 		log.Printf("  ⚠ 设置追踪止损失败: %v", err)
@@ -823,12 +824,13 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *decision.Decision, ac
 
 	// 设置追踪止损
 	avgPrice := order["avgPrice"].(float64)
-	activationPrice := decision.TakeProfit + (avgPrice-decision.TakeProfit)/(at.activationPriceRate/100)
+	activationPrice := decision.TakeProfit + (avgPrice-decision.TakeProfit)*(at.activationPriceRate/100)
 	// 回撤价格
 	callbackPrice := activationPrice * ((100 + at.callbackRate) / 100)
-	// 如果回撤后的价格比订单成交价还高则强制使用更低的激活价格
-	if callbackPrice >= avgPrice {
-		activationPrice = avgPrice * ((100 - at.callbackRate) / 100)
+	// 如果回撤后的价格比订单成交价还高则不设置
+	if callbackPrice >= avgPrice*0.995 {
+		log.Printf("  止盈太低设置追踪止损失败，开仓价格: %.8f, 回撤价格: %.8f, 回撤激活价格：%.8f", avgPrice, callbackPrice, activationPrice)
+		return nil
 	}
 	if err := at.trader.SetTrailingStopLoss(decision.Symbol, "SHORT", quantity, activationPrice, at.callbackRate); err != nil {
 		log.Printf("  ⚠ 设置追踪止损失败: %v", err)
