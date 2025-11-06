@@ -43,11 +43,11 @@ func Get(symbol string) (*Data, error) {
 	}
 
 	// 获取最新成交数据
-	var tradeData []Trade
-	tradeData, err = WSMonitorCli.GetCurrentTrades(symbol)
-	if err != nil {
-		return nil, fmt.Errorf("获取最新成交数据失败: %v", err)
-	}
+	// var tradeData []Trade
+	// tradeData, err = WSMonitorCli.GetCurrentTrades(symbol)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("获取最新成交数据失败: %v", err)
+	// }
 
 	// 计算当前指标 (基于3分钟最新数据)
 	currentPrice := klines3m[len(klines3m)-1].Close
@@ -75,13 +75,13 @@ func Get(symbol string) (*Data, error) {
 	}
 
 	// 获取OI数据
-	oiData, err := getOpenInterestData(symbol)
+	// oiData, err := getOpenInterestData(symbol)
+	// 使用历史数据接口
+	oiData, err := getOpenInterestHistData(symbol, "5m", 5)
 	if err != nil {
 		// OI失败不影响整体,使用默认值
 		oiData = &OIData{Latest: 0, Average: 0}
 	}
-	// 获取4小时历史OI数据
-	oiHistData4h := getOpenInterestHistData(symbol, "4h")
 
 	// 获取Funding Rate
 	fundingRate, _ := getFundingRate(symbol)
@@ -100,7 +100,7 @@ func Get(symbol string) (*Data, error) {
 	longerTermData := calculateLongerTermData(klines4h)
 
 	// 计算BuySellRatio
-	buySellRatio := CalculateBuySellRatio(tradeData)
+	buySellRatio := getTakerlongshortRatioData(symbol, "5m", 5)
 
 	return &Data{
 		Symbol:            symbol,
@@ -117,7 +117,6 @@ func Get(symbol string) (*Data, error) {
 		MidTermSeries1h:   midTermData1h,
 		LongerTermContext: longerTermData,
 		BuySellRatio:      buySellRatio,
-		OiHistData4h:      oiHistData4h,
 	}, nil
 }
 
@@ -492,7 +491,7 @@ func CalculateBuySellRatio(trades []Trade) float64 {
 		return 0
 	}
 
-	ratio := totalBuyVolume / totalSellVolume
+	ratio := totalBuyVolume / (totalSellVolume + totalBuyVolume)
 	return ratio
 }
 
@@ -671,9 +670,70 @@ func getOpenInterestData(symbol string) (*OIData, error) {
 	}, nil
 }
 
-// getOpenInterestHistData 获取OI数据（合约持仓量历史）
-func getOpenInterestHistData(symbol string, period string) float64 {
-	api_url := fmt.Sprintf("https://fapi.binance.com/futures/data/openInterestHist?symbol=%s&period=%s", symbol, period)
+// getOpenInterestHistData 获取OI趋势分析（合约持仓量历史）
+func getOpenInterestHistData(symbol string, period string, limit int) (*OIData, error) {
+	api_url := fmt.Sprintf("https://fapi.binance.com/futures/data/openInterestHist?symbol=%s&period=%s&limit=%s", symbol, period, limit)
+
+	// 设置代理地址（例如：127.0.0.1:1080）
+	proxyURL, err := url.Parse("http://127.0.0.1:8800")
+	if err != nil {
+		log.Fatalf("解析代理地址失败: %v", err)
+	}
+
+	// 创建自定义 Transport 并设置代理
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+	}
+
+	// 创建 HTTP 客户端并使用自定义 Transport
+	client := &http.Client{
+		Transport: transport,
+	}
+
+	resp, err := client.Get(api_url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	type InterestData struct {
+		SumOpenInterest string `json:"sumOpenInterest"`
+		Symbol          string `json:"symbol"`
+		Timestamp       int64  `json:"timestamp"`
+	}
+
+	var data []InterestData
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil, err
+	}
+
+	ioTotal := 0.0
+	for _, item := range data {
+		io := 0.0
+		io, _ = strconv.ParseFloat(item.SumOpenInterest, 64)
+		ioTotal += io
+	}
+
+	// 获取当前OI
+	oIData, err := getOpenInterestData(symbol)
+	if err != nil {
+		return nil, err
+	}
+
+	return &OIData{
+		Latest:  oIData.Latest,
+		Average: ioTotal / float64(len(data)),
+	}, nil
+}
+
+// getTakerlongshortRatioData 合约主动买卖量,多空比率
+func getTakerlongshortRatioData(symbol string, period string, limit int) float64 {
+	api_url := fmt.Sprintf("https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=%s&period=%s&limit=%s", symbol, period, limit)
 
 	// 设置代理地址（例如：127.0.0.1:1080）
 	proxyURL, err := url.Parse("http://127.0.0.1:8800")
@@ -703,9 +763,10 @@ func getOpenInterestHistData(symbol string, period string) float64 {
 	}
 
 	type InterestData struct {
-		SumOpenInterest string `json:"sumOpenInterest"`
-		Symbol          string `json:"symbol"`
-		Timestamp       int64  `json:"timestamp"`
+		BuySellRatio string `json:"buySellRatio"`
+		BuyVol       string `json:"buyVol"`
+		SellVol      string `json:"sellVol"`
+		Timestamp    int64  `json:"timestamp"`
 	}
 
 	var data []InterestData
@@ -713,10 +774,14 @@ func getOpenInterestHistData(symbol string, period string) float64 {
 		return 0.0
 	}
 
-	lastItem := data[len(data)-1]
-	sumOpenInterest, _ := strconv.ParseFloat(lastItem.SumOpenInterest, 64)
+	buySellRatioTotal := 0.0
+	for _, item := range data {
+		buySellRatio := 0.0
+		buySellRatio, _ = strconv.ParseFloat(item.BuySellRatio, 64)
+		buySellRatioTotal += buySellRatio
+	}
 
-	return sumOpenInterest
+	return buySellRatioTotal / float64(len(data))
 }
 
 // getFundingRate 获取资金费率
@@ -768,6 +833,18 @@ func getFundingRate(symbol string) (float64, error) {
 	return rate, nil
 }
 
+// getLastPrice 获取最新价格
+func GetLastPrice(symbol string) (float64, error) {
+	var klines3m []Kline
+	klines3m, err := WSMonitorCli.GetCurrentKlines(symbol, "3m") // 多获取一些用于计算
+	if err != nil {
+		return 0.0, fmt.Errorf("获取3分钟K线失败: %v", err)
+	}
+	CurrentPrice := klines3m[len(klines3m)-1].Close
+
+	return CurrentPrice, nil
+}
+
 // Format 格式化输出市场数据
 func Format(data *Data) string {
 	var sb strings.Builder
@@ -778,9 +855,9 @@ func Format(data *Data) string {
 	sb.WriteString(fmt.Sprintf("In addition, here is the latest %s open interest and funding rate for perps:\n\n",
 		data.Symbol))
 
-	if data.OpenInterest != nil && data.OiHistData4h > 0 {
-		sb.WriteString(fmt.Sprintf("OI: %.2f vs. OI4h: %.2f\n\n",
-			data.OpenInterest.Latest, data.OiHistData4h))
+	if data.OpenInterest != nil {
+		sb.WriteString(fmt.Sprintf("OI Latest:%.2f vs. OI Average: %.2f\n\n",
+			data.OpenInterest.Latest, data.OpenInterest.Average))
 	}
 
 	sb.WriteString(fmt.Sprintf("Funding Rate: %.8f\n\n", data.FundingRate))
@@ -812,17 +889,17 @@ func Format(data *Data) string {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.IntradaySeries.RSI14Values)))
 		}
 
-		if len(data.IntradaySeries.BollingerBandwidth) > 0 {
-			sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.IntradaySeries.BollingerBandwidth)))
-		}
+		// if len(data.IntradaySeries.BollingerBandwidth) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.IntradaySeries.BollingerBandwidth)))
+		// }
 
-		if len(data.IntradaySeries.VWAPValues) > 0 {
-			sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.IntradaySeries.VWAPValues)))
-		}
+		// if len(data.IntradaySeries.VWAPValues) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.IntradaySeries.VWAPValues)))
+		// }
 
-		if len(data.IntradaySeries.CMFValues) > 0 {
-			sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.IntradaySeries.CMFValues)))
-		}
+		// if len(data.IntradaySeries.CMFValues) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.IntradaySeries.CMFValues)))
+		// }
 	}
 
 	if data.MidTermSeries15m != nil {
@@ -848,17 +925,17 @@ func Format(data *Data) string {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.MidTermSeries15m.RSI14Values)))
 		}
 
-		if len(data.MidTermSeries15m.BollingerBandwidth) > 0 {
-			sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries15m.BollingerBandwidth)))
-		}
+		// if len(data.MidTermSeries15m.BollingerBandwidth) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries15m.BollingerBandwidth)))
+		// }
 
-		if len(data.MidTermSeries15m.VWAPValues) > 0 {
-			sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.MidTermSeries15m.VWAPValues)))
-		}
+		// if len(data.MidTermSeries15m.VWAPValues) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.MidTermSeries15m.VWAPValues)))
+		// }
 
-		if len(data.MidTermSeries15m.CMFValues) > 0 {
-			sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries15m.CMFValues)))
-		}
+		// if len(data.MidTermSeries15m.CMFValues) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries15m.CMFValues)))
+		// }
 	}
 
 	if data.MidTermSeries1h != nil {
@@ -884,17 +961,17 @@ func Format(data *Data) string {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.MidTermSeries1h.RSI14Values)))
 		}
 
-		if len(data.MidTermSeries1h.BollingerBandwidth) > 0 {
-			sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries1h.BollingerBandwidth)))
-		}
+		// if len(data.MidTermSeries1h.BollingerBandwidth) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries1h.BollingerBandwidth)))
+		// }
 
-		if len(data.MidTermSeries1h.VWAPValues) > 0 {
-			sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.MidTermSeries1h.VWAPValues)))
-		}
+		// if len(data.MidTermSeries1h.VWAPValues) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.MidTermSeries1h.VWAPValues)))
+		// }
 
-		if len(data.MidTermSeries1h.CMFValues) > 0 {
-			sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries1h.CMFValues)))
-		}
+		// if len(data.MidTermSeries1h.CMFValues) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.MidTermSeries1h.CMFValues)))
+		// }
 	}
 
 	if data.LongerTermContext != nil {
@@ -917,17 +994,17 @@ func Format(data *Data) string {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.LongerTermContext.RSI14Values)))
 		}
 
-		if len(data.LongerTermContext.BollingerBandwidth) > 0 {
-			sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.LongerTermContext.BollingerBandwidth)))
-		}
+		// if len(data.LongerTermContext.BollingerBandwidth) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("Bollinger Bandwidth (20‑period): %s\n\n", formatFloatSlice(data.LongerTermContext.BollingerBandwidth)))
+		// }
 
-		if len(data.LongerTermContext.VWAPValues) > 0 {
-			sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.LongerTermContext.VWAPValues)))
-		}
+		// if len(data.LongerTermContext.VWAPValues) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("VWAP : %s\n\n", formatFloatSlice(data.LongerTermContext.VWAPValues)))
+		// }
 
-		if len(data.LongerTermContext.CMFValues) > 0 {
-			sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.LongerTermContext.CMFValues)))
-		}
+		// if len(data.LongerTermContext.CMFValues) > 0 {
+		// 	sb.WriteString(fmt.Sprintf("CMF & OBV (20‑period): %s\n\n", formatFloatSlice(data.LongerTermContext.CMFValues)))
+		// }
 	}
 
 	return sb.String()

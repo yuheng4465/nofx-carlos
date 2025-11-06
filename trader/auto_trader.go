@@ -828,15 +828,15 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *decision.Decision, act
 	}
 
 	// 获取当前价格
-	marketData, err := market.Get(decision.Symbol)
+	CurrentPrice, err := market.GetLastPrice(decision.Symbol)
 	if err != nil {
 		return err
 	}
 
 	// 计算数量
-	quantity := decision.PositionSizeUSD / marketData.CurrentPrice
+	quantity := decision.PositionSizeUSD / CurrentPrice
 	actionRecord.Quantity = quantity
-	actionRecord.Price = marketData.CurrentPrice
+	actionRecord.Price = CurrentPrice
 
 	// ⚠️ 保证金验证：防止保证金不足错误（code=-2019）
 	requiredMargin := decision.PositionSizeUSD / float64(decision.Leverage)
@@ -922,15 +922,15 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *decision.Decision, ac
 	}
 
 	// 获取当前价格
-	marketData, err := market.Get(decision.Symbol)
+	currentPrice, err := market.GetLastPrice(decision.Symbol)
 	if err != nil {
 		return err
 	}
 
 	// 计算数量
-	quantity := decision.PositionSizeUSD / marketData.CurrentPrice
+	quantity := decision.PositionSizeUSD / currentPrice
 	actionRecord.Quantity = quantity
-	actionRecord.Price = marketData.CurrentPrice
+	actionRecord.Price = currentPrice
 
 	// ⚠️ 保证金验证：防止保证金不足错误（code=-2019）
 	requiredMargin := decision.PositionSizeUSD / float64(decision.Leverage)
@@ -1006,11 +1006,11 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *decision.Decision, ac
 	log.Printf("  🔄 平多仓: %s", decision.Symbol)
 
 	// 获取当前价格
-	marketData, err := market.Get(decision.Symbol)
+	currentPrice, err := market.GetLastPrice(decision.Symbol)
 	if err != nil {
 		return err
 	}
-	actionRecord.Price = marketData.CurrentPrice
+	actionRecord.Price = currentPrice
 
 	// 平仓
 	order, err := at.trader.CloseLong(decision.Symbol, 0, false) // 0 = 全部平仓
@@ -1032,11 +1032,11 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *decision.Decision, a
 	log.Printf("  🔄 平空仓: %s", decision.Symbol)
 
 	// 获取当前价格
-	marketData, err := market.Get(decision.Symbol)
+	currentPrice, err := market.GetLastPrice(decision.Symbol)
 	if err != nil {
 		return err
 	}
-	actionRecord.Price = marketData.CurrentPrice
+	actionRecord.Price = currentPrice
 
 	// 平仓
 	order, err := at.trader.CloseShort(decision.Symbol, 0, false) // 0 = 全部平仓
@@ -1058,11 +1058,11 @@ func (at *AutoTrader) executeUpdateStopLossWithRecord(decision *decision.Decisio
 	log.Printf("  🎯 调整止损: %s → %.2f", decision.Symbol, decision.NewStopLoss)
 
 	// 获取当前价格
-	marketData, err := market.Get(decision.Symbol)
+	currentPrice, err := market.GetLastPrice(decision.Symbol)
 	if err != nil {
 		return err
 	}
-	actionRecord.Price = marketData.CurrentPrice
+	actionRecord.Price = currentPrice
 
 	// 获取当前持仓
 	positions, err := at.trader.GetPositions(false)
@@ -1091,11 +1091,11 @@ func (at *AutoTrader) executeUpdateStopLossWithRecord(decision *decision.Decisio
 	positionAmt, _ := targetPosition["positionAmt"].(float64)
 
 	// 验证新止损价格合理性
-	if positionSide == "LONG" && decision.NewStopLoss >= marketData.CurrentPrice {
-		return fmt.Errorf("多单止损必须低于当前价格 (当前: %.2f, 新止损: %.2f)", marketData.CurrentPrice, decision.NewStopLoss)
+	if positionSide == "LONG" && decision.NewStopLoss >= currentPrice {
+		return fmt.Errorf("多单止损必须低于当前价格 (当前: %.2f, 新止损: %.2f)", currentPrice, decision.NewStopLoss)
 	}
-	if positionSide == "SHORT" && decision.NewStopLoss <= marketData.CurrentPrice {
-		return fmt.Errorf("空单止损必须高于当前价格 (当前: %.2f, 新止损: %.2f)", marketData.CurrentPrice, decision.NewStopLoss)
+	if positionSide == "SHORT" && decision.NewStopLoss <= currentPrice {
+		return fmt.Errorf("空单止损必须高于当前价格 (当前: %.2f, 新止损: %.2f)", currentPrice, decision.NewStopLoss)
 	}
 
 	// 取消旧的止损单（避免多个止损单共存）
@@ -1111,7 +1111,7 @@ func (at *AutoTrader) executeUpdateStopLossWithRecord(decision *decision.Decisio
 		return fmt.Errorf("修改止损失败: %w", err)
 	}
 
-	log.Printf("  ✓ 止损已调整: %.2f (当前价格: %.2f)", decision.NewStopLoss, marketData.CurrentPrice)
+	log.Printf("  ✓ 止损已调整: %.2f (当前价格: %.2f)", decision.NewStopLoss, currentPrice)
 	return nil
 }
 
@@ -1120,11 +1120,11 @@ func (at *AutoTrader) executeUpdateTakeProfitWithRecord(decision *decision.Decis
 	log.Printf("  🎯 调整止盈: %s → %.2f", decision.Symbol, decision.NewTakeProfit)
 
 	// 获取当前价格
-	marketData, err := market.Get(decision.Symbol)
+	currentPrice, err := market.GetLastPrice(decision.Symbol)
 	if err != nil {
 		return err
 	}
-	actionRecord.Price = marketData.CurrentPrice
+	actionRecord.Price = currentPrice
 
 	// 获取当前持仓
 	positions, err := at.trader.GetPositions(false)
@@ -1153,11 +1153,11 @@ func (at *AutoTrader) executeUpdateTakeProfitWithRecord(decision *decision.Decis
 	positionAmt, _ := targetPosition["positionAmt"].(float64)
 
 	// 验证新止盈价格合理性
-	if positionSide == "LONG" && decision.NewTakeProfit <= marketData.CurrentPrice {
-		return fmt.Errorf("多单止盈必须高于当前价格 (当前: %.2f, 新止盈: %.2f)", marketData.CurrentPrice, decision.NewTakeProfit)
+	if positionSide == "LONG" && decision.NewTakeProfit <= currentPrice {
+		return fmt.Errorf("多单止盈必须高于当前价格 (当前: %.2f, 新止盈: %.2f)", currentPrice, decision.NewTakeProfit)
 	}
-	if positionSide == "SHORT" && decision.NewTakeProfit >= marketData.CurrentPrice {
-		return fmt.Errorf("空单止盈必须低于当前价格 (当前: %.2f, 新止盈: %.2f)", marketData.CurrentPrice, decision.NewTakeProfit)
+	if positionSide == "SHORT" && decision.NewTakeProfit >= currentPrice {
+		return fmt.Errorf("空单止盈必须低于当前价格 (当前: %.2f, 新止盈: %.2f)", currentPrice, decision.NewTakeProfit)
 	}
 
 	// 取消旧的止盈单（避免多个止盈单共存）
@@ -1173,7 +1173,7 @@ func (at *AutoTrader) executeUpdateTakeProfitWithRecord(decision *decision.Decis
 		return fmt.Errorf("修改止盈失败: %w", err)
 	}
 
-	log.Printf("  ✓ 止盈已调整: %.2f (当前价格: %.2f)", decision.NewTakeProfit, marketData.CurrentPrice)
+	log.Printf("  ✓ 止盈已调整: %.2f (当前价格: %.2f)", decision.NewTakeProfit, currentPrice)
 	return nil
 }
 
@@ -1187,11 +1187,11 @@ func (at *AutoTrader) executePartialCloseWithRecord(decision *decision.Decision,
 	}
 
 	// 获取当前价格
-	marketData, err := market.Get(decision.Symbol)
+	currentPrice, err := market.GetLastPrice(decision.Symbol)
 	if err != nil {
 		return err
 	}
-	actionRecord.Price = marketData.CurrentPrice
+	actionRecord.Price = currentPrice
 
 	// 获取当前持仓
 	positions, err := at.trader.GetPositions(false)
@@ -1506,10 +1506,10 @@ func (at *AutoTrader) detectAutoClosedPositions(currentPositions []decision.Posi
 		if !currentPosMap[posKey] {
 			// 这个持仓消失了，说明被自动平仓了（止损/止盈触发）
 			// 获取当前价格作为平仓价格的近似值
-			marketData, err := market.Get(lastPos.Symbol)
+			currentPrice, err := market.GetLastPrice(lastPos.Symbol)
 			closePrice := 0.0
 			if err == nil {
-				closePrice = marketData.CurrentPrice
+				closePrice = currentPrice
 			} else {
 				// 如果无法获取当前价格，使用入场价作为fallback
 				closePrice = lastPos.EntryPrice

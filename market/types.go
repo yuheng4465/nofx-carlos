@@ -18,7 +18,6 @@ type Data struct {
 	MidTermSeries1h   *MidTermData1h  // 1小时数据 - 中期趋势
 	LongerTermContext *LongerTermData // 4小时数据 - 长期趋势
 	BuySellRatio      float64
-	OiHistData4h      float64
 }
 
 // OIData Open Interest数据

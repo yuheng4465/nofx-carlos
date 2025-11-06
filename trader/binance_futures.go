@@ -37,8 +37,6 @@ type FuturesTrader struct {
 	cachedFormatsDuration time.Duration
 
 	// 服务器时间同步
-	timeSyncMutex    sync.Mutex
-	lastTimeSync     time.Time
 	timeSyncInterval time.Duration
 	recvWindow       futures.RequestOption
 }
@@ -65,26 +63,6 @@ func NewFuturesTrader(apiKey, secretKey string) *FuturesTrader {
 	}
 
 	return trader
-}
-
-// syncServerTime 同步本地与币安服务器的时间偏移
-func (t *FuturesTrader) syncServerTime(ctx context.Context, force bool) error {
-	t.timeSyncMutex.Lock()
-	defer t.timeSyncMutex.Unlock()
-
-	if !force && !t.lastTimeSync.IsZero() && time.Since(t.lastTimeSync) < t.timeSyncInterval {
-		return nil
-	}
-
-	offset, err := t.client.NewSetServerTimeService().Do(ctx)
-	if err != nil {
-		return err
-	}
-
-	t.lastTimeSync = time.Now()
-	drift := time.Duration(offset) * time.Millisecond
-	log.Printf("✓ Binance服务器时间同步成功 (offset=%s)", drift)
-	return nil
 }
 
 // setDualSidePosition 设置双向持仓模式（初始化时调用）
