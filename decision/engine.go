@@ -501,15 +501,15 @@ func extractDecisions(response string) ([]Decision, error) {
 	s := removeInvisibleRunes(response)
 	s = strings.TrimSpace(s)
 
-	// 🔧 關鍵修復：在正則匹配之前就先修復全角字符！
-	// 否則正則表達式 \[ 無法匹配全角的 ［
+	// 🔧 关键修复 (Critical Fix)：在正则匹配之前就先修复全角字符！
+	// 否则正则表达式 \[ 无法匹配全角的 ［
 	s = fixMissingQuotes(s)
 
 	// 1) 优先从 ```json 代码块中提取
 	if m := reJSONFence.FindStringSubmatch(s); m != nil && len(m) > 1 {
 		jsonContent := strings.TrimSpace(m[1])
 		jsonContent = compactArrayOpen(jsonContent) // 把 "[ {" 规整为 "[{"
-		jsonContent = fixMissingQuotes(jsonContent) // 二次修復（防止 regex 提取後還有全角）
+		jsonContent = fixMissingQuotes(jsonContent) // 二次修复（防止 regex 提取后还有残留全角）
 		if err := validateJSONFormat(jsonContent); err != nil {
 			return nil, fmt.Errorf("JSON格式验证失败: %w\nJSON内容: %s\n完整响应:\n%s", err, jsonContent, response)
 		}
@@ -520,16 +520,32 @@ func extractDecisions(response string) ([]Decision, error) {
 		return decisions, nil
 	}
 
-	// 2) 退而求其次：全文寻找首个对象数组
-	// 注意：此時 s 已經過 fixMissingQuotes()，全角字符已轉換為半角
+	// 2) 退而求其次 (Fallback)：全文寻找首个对象数组
+	// 注意：此时 s 已经过 fixMissingQuotes()，全角字符已转换为半角
 	jsonContent := strings.TrimSpace(reJSONArray.FindString(s))
 	if jsonContent == "" {
-		return nil, fmt.Errorf("无法找到JSON数组起始（已嘗試修復全角字符）\n原始響應前200字符: %s", s[:min(200, len(s))])
+		// 🔧 安全回退 (Safe Fallback)：当AI只输出思维链没有JSON时，生成保底决策（避免系统崩溃）
+		log.Printf("⚠️  [SafeFallback] AI未输出JSON决策，进入安全等待模式 (AI response without JSON, entering safe wait mode)")
+
+		// 提取思维链摘要（最多 240 字符）
+		cotSummary := s
+		if len(cotSummary) > 240 {
+			cotSummary = cotSummary[:240] + "..."
+		}
+
+		// 生成保底决策：所有币种进入 wait 状态
+		fallbackDecision := Decision{
+			Symbol:    "ALL",
+			Action:    "wait",
+			Reasoning: fmt.Sprintf("模型未输出结构化JSON决策，进入安全等待；摘要：%s", cotSummary),
+		}
+
+		return []Decision{fallbackDecision}, nil
 	}
 
-	// 🔧 規整格式（此時全角字符已在前面修復過）
+	// 🔧 规整格式（此时全角字符已在前面修复过）
 	jsonContent = compactArrayOpen(jsonContent)
-	jsonContent = fixMissingQuotes(jsonContent) // 二次修復（防止 regex 提取後還有殘留全角）
+	jsonContent = fixMissingQuotes(jsonContent) // 二次修复（防止 regex 提取后还有残留全角）
 
 	// 🔧 验证 JSON 格式（检测常见错误）
 	if err := validateJSONFormat(jsonContent); err != nil {
