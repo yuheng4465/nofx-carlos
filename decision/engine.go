@@ -126,31 +126,41 @@ func GetFullDecisionWithCustomPrompt(ctx *Context, mcpClient *mcp.Client, custom
 	// 2. 构建 System Prompt（固定规则）和 User Prompt（动态数据）
 	systemPrompt := buildSystemPromptWithCustom(ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage, customPrompt, overrideBase, templateName)
 	userPrompt := buildUserPrompt(ctx)
+	/////////////////////////////////////////////////////////////////////////
+	var Decisions = []Decision{}
+	return &FullDecision{
+		CoTTrace:     "",
+		Decisions:    Decisions,
+		Timestamp:    time.Now(),
+		SystemPrompt: systemPrompt,
+		UserPrompt:   userPrompt,
+	}, nil
+	////////////////////////////////////////////////////////////////////////
 
 	// 3. 调用AI API（使用 system + user prompt）
-	aiResponse, err := mcpClient.CallWithMessages(systemPrompt, userPrompt)
-	if err != nil {
-		return nil, fmt.Errorf("调用AI API失败: %w", err)
-	}
+	// aiResponse, err := mcpClient.CallWithMessages(systemPrompt, userPrompt)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("调用AI API失败: %w", err)
+	// }
 
-	// 4. 解析AI响应
-	decision, err := parseFullDecisionResponse(aiResponse, ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage)
+	// // 4. 解析AI响应
+	// decision, err := parseFullDecisionResponse(aiResponse, ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage)
 
-	// 无论是否有错误，都要保存 SystemPrompt 和 UserPrompt（用于调试和决策未执行后的问题定位）
-	if decision != nil {
-		decision.Timestamp = time.Now()
-		decision.SystemPrompt = systemPrompt // 保存系统prompt
-		decision.UserPrompt = userPrompt     // 保存输入prompt
-	}
+	// // 无论是否有错误，都要保存 SystemPrompt 和 UserPrompt（用于调试和决策未执行后的问题定位）
+	// if decision != nil {
+	// 	decision.Timestamp = time.Now()
+	// 	decision.SystemPrompt = systemPrompt // 保存系统prompt
+	// 	decision.UserPrompt = userPrompt     // 保存输入prompt
+	// }
 
-	if err != nil {
-		return decision, fmt.Errorf("解析AI响应失败: %w", err)
-	}
+	// if err != nil {
+	// 	return decision, fmt.Errorf("解析AI响应失败: %w", err)
+	// }
 
-	decision.Timestamp = time.Now()
-	decision.SystemPrompt = systemPrompt // 保存系统prompt
-	decision.UserPrompt = userPrompt     // 保存输入prompt
-	return decision, nil
+	// decision.Timestamp = time.Now()
+	// decision.SystemPrompt = systemPrompt // 保存系统prompt
+	// decision.UserPrompt = userPrompt     // 保存输入prompt
+	// return decision, nil
 }
 
 // fetchMarketDataForContext 为上下文中的所有币种获取市场数据和OI数据
@@ -358,13 +368,13 @@ func buildUserPrompt(ctx *Context) string {
 	}
 
 	// 账户
-	sb.WriteString(fmt.Sprintf("账户: 净值%.2f | 余额%.2f (%.1f%%) | 盈亏%+.2f%% | 保证金%.1f%% | 持仓%d个\n\n",
+	sb.WriteString(fmt.Sprintf("账户: 净值%.2f | 余额%.2f (%.1f%%) | 盈亏%+.2f%% | 保证金%.1f%% | 持仓%d个 | 手续费%.4f \n\n",
 		ctx.Account.TotalEquity,
 		ctx.Account.AvailableBalance,
 		(ctx.Account.AvailableBalance/ctx.Account.TotalEquity)*100,
 		ctx.Account.TotalPnLPct,
 		ctx.Account.MarginUsedPct,
-		ctx.Account.PositionCount))
+		ctx.Account.PositionCount, 0.04))
 
 	// 持仓（完整市场数据）
 	if len(ctx.Positions) > 0 {

@@ -29,12 +29,17 @@ type FuturesTrader struct {
 	// 缓存有效期（15秒）
 	cacheDuration time.Duration
 
-	// 数据进度缓存
+	// 数据精度缓存
 	cachedFormats     map[string]map[string]int
 	formatsCacheTime  time.Time
 	formatsCacheMutex sync.RWMutex
 	// 精度数据缓存有效期（300秒）
 	cachedFormatsDuration time.Duration
+
+	// 手续费缓存
+	cachedCommissionRate     map[string]float64
+	commissionRateCacheTime  time.Time
+	commissionRateCacheMutex sync.RWMutex
 
 	// 服务器时间同步
 	timeSyncInterval time.Duration
@@ -138,6 +143,42 @@ func (t *FuturesTrader) GetBalance() (map[string]interface{}, error) {
 	t.balanceCacheMutex.Unlock()
 
 	return result, nil
+}
+
+// GetBalance 获取手续费（带缓存）
+func (t *FuturesTrader) GetCommissionRate(symbol string) (float64, error) {
+	// 先检查缓存是否有效
+	result := make(map[string]float64)
+	t.commissionRateCacheMutex.RLock()
+	if t.cachedCommissionRate != nil && time.Since(t.commissionRateCacheTime) < t.cachedFormatsDuration {
+		if IsInMap(t.cachedCommissionRate, symbol) {
+			cacheAge := time.Since(t.commissionRateCacheTime)
+			t.commissionRateCacheMutex.RUnlock()
+			log.Printf("✓ 使用缓存的手续费率（缓存时间: %.1f秒前）", cacheAge.Seconds())
+			return t.cachedCommissionRate[symbol], nil
+		} else {
+			result = t.cachedCommissionRate
+		}
+	}
+	t.commissionRateCacheMutex.RUnlock()
+
+	// 缓存过期或不存在，调用API
+	log.Printf("🔄 缓存过期，正在调用币安API获取手续费...")
+	account, err := t.client.NewCommissionRateService().Do(context.Background(), t.recvWindow)
+	if err != nil {
+		log.Printf("❌ 币安API调用失败: %v", err)
+		return 0.0, fmt.Errorf("获取手续费信息失败: %w", err)
+	}
+
+	result[symbol], _ = strconv.ParseFloat(account.TakerCommissionRate, 64)
+
+	// 更新缓存
+	t.commissionRateCacheMutex.Lock()
+	t.cachedCommissionRate = result
+	t.commissionRateCacheTime = time.Now()
+	t.commissionRateCacheMutex.Unlock()
+
+	return result[symbol], nil
 }
 
 // GetPositions 获取所有持仓（带缓存）
@@ -958,4 +999,9 @@ func stringContains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func IsInMap(m map[string]float64, e string) bool {
+	_, ok := m[e]
+	return ok
 }

@@ -32,6 +32,7 @@ config.json
 config.db
 
 # 决策日志
+prompts/
 decision_logs/
 coin_pool_cache/
 nofx_test

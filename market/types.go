@@ -4,20 +4,27 @@ import "time"
 
 // Data 市场数据结构
 type Data struct {
-	Symbol            string
-	CurrentPrice      float64
-	PriceChange1h     float64 // 1小时价格变化百分比
-	PriceChange4h     float64 // 4小时价格变化百分比
-	CurrentEMA20      float64
-	CurrentMACD       float64
-	CurrentRSI7       float64
-	OpenInterest      *OIData
-	FundingRate       float64
-	IntradaySeries    *IntradayData   // 3分钟数据 - 实时价格
-	MidTermSeries15m  *MidTermData15m // 15分钟数据 - 短期趋势
-	MidTermSeries1h   *MidTermData1h  // 1小时数据 - 中期趋势
-	LongerTermContext *LongerTermData // 4小时数据 - 长期趋势
-	BuySellRatio      float64
+	Symbol              string
+	CurrentPrice        float64
+	PriceChange1h       float64 // 1小时价格变化百分比
+	PriceChange4h       float64 // 4小时价格变化百分比
+	CurrentEMA20        float64
+	CurrentMACD         float64
+	CurrentRSI7         float64
+	OpenInterest        *OIData
+	FundingRate         float64
+	IntradaySeries      *IntradayData   // 3分钟数据 - 实时价格
+	MidTermSeries15m    *MidTermData15m // 15分钟数据 - 短期趋势
+	MidTermSeries1h     *MidTermData1h  // 1小时数据 - 中期趋势
+	LongerTermContext   *LongerTermData // 4小时数据 - 长期趋势
+	BuySellRatio        float64
+	VolumeRatio         float64   //成交量比率（当前）
+	BollingerBandMiddle []float64 // 布林带中轨
+	BollingerBandUpper  []float64 // 布林带上轨
+	BollingerBandLower  []float64 // 布林带下轨
+	VWAPVales           []float64 // 成交量加权平均价
+	CMFValues           []float64 // 资金流量指标（Chaikin Money Flow, CMF）
+	OBVValues           []float64 // OBV序列
 }
 
 // OIData Open Interest数据
@@ -28,54 +35,43 @@ type OIData struct {
 
 // IntradayData 日内数据(3分钟间隔)
 type IntradayData struct {
-	MidPrices          []float64
-	EMA20Values        []float64
-	MACDValues         []float64
-	RSI7Values         []float64
-	RSI14Values        []float64
-	BollingerBandwidth []float64
-	VWAPValues         []float64
-	CMFValues          []float64
+	MidPrices   []float64
+	EMA20Values []float64
+	MACDValues  []float64
+	RSI7Values  []float64
+	RSI14Values []float64
 }
 
 // MidTermData15m 15分钟时间框架数据 - 短期趋势过滤
 type MidTermData15m struct {
-	MidPrices          []float64
-	EMA20Values        []float64
-	MACDValues         []float64
-	RSI7Values         []float64
-	RSI14Values        []float64
-	BollingerBandwidth []float64
-	VWAPValues         []float64
-	CMFValues          []float64
+	MidPrices   []float64
+	EMA20Values []float64
+	MACDValues  []float64
+	RSI7Values  []float64
+	RSI14Values []float64
 }
 
 // MidTermData1h 1小时时间框架数据 - 中期趋势确认
 type MidTermData1h struct {
-	MidPrices          []float64
-	EMA20Values        []float64
-	MACDValues         []float64
-	RSI7Values         []float64
-	RSI14Values        []float64
-	BollingerBandwidth []float64
-	VWAPValues         []float64
-	CMFValues          []float64
+	MidPrices   []float64
+	EMA20Values []float64
+	MACDValues  []float64
+	RSI7Values  []float64
+	RSI14Values []float64
 }
 
 // LongerTermData 长期数据(4小时时间框架)
 type LongerTermData struct {
-	EMA20              float64
-	EMA50              float64
-	ATR3               float64
-	ATR14              float64
-	CurrentVolume      float64
-	AverageVolume      float64
-	AverageVolume20    float64
-	MACDValues         []float64
-	RSI14Values        []float64
-	BollingerBandwidth []float64
-	VWAPValues         []float64
-	CMFValues          []float64
+	EMA20           float64
+	EMA50           float64
+	ATR3            float64
+	ATR7            float64 // 平均真实波幅
+	ATR14           float64 // 平均真实波幅
+	CurrentVolume   float64
+	AverageVolume   float64
+	AverageVolume20 float64
+	MACDValues      []float64
+	RSI14Values     []float64
 }
 
 // Binance API 响应结构
