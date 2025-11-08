@@ -210,6 +210,7 @@ func main() {
 	// 管理员模式下需要管理员密码，缺失则退出
 	if adminMode {
 		adminPassword := os.Getenv("NOFX_ADMIN_PASSWORD")
+		adminPassword = "123456"
 		if adminPassword == "" {
 			log.Fatalf("Admin mode is enabled but NOFX_ADMIN_PASSWORD is missing. Set NOFX_ADMIN_PASSWORD and restart.")
 		}
@@ -241,6 +242,7 @@ func main() {
 		log.Printf("⚠️  数据库中未配置default_coins，使用硬编码默认值")
 	}
 
+	defaultCoins = []string{"BTCUSDT", "ETHUSDT", "AIAUSDT"}
 	pool.SetDefaultCoins(defaultCoins)
 	// 设置是否使用默认主流币种
 	pool.SetUseDefaultCoins(useDefaultCoins)
@@ -332,7 +334,7 @@ func main() {
 	}()
 
 	// 启动流行情数据 - 默认使用所有交易员设置的币种 如果没有设置币种 则优先使用系统默认
-	go market.NewWSMonitor(150).Start(database.GetCustomCoins())
+	go market.NewWSMonitor(150).Start(defaultCoins)
 	//go market.NewWSMonitor(150).Start([]string{}) //这里是一个使用方式 传入空的话 则使用market市场的所有币种
 	// 设置优雅退出
 	sigChan := make(chan os.Signal, 1)

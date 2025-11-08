@@ -85,7 +85,7 @@ func (c *CombinedStreamsClient) BatchSubscribeKlines(symbols []string, interval 
 }
 
 // BatchSubscribeKlines 批量订阅成交信息
-func (c *CombinedStreamsClient) BatchSubscribeAggTrades(symbols []string) error {
+func (c *CombinedStreamsClient) BatchSubscribeTrades(symbols []string) error {
 	// 将symbols分批处理
 	batches := c.splitIntoBatches(symbols, c.batchSize)
 

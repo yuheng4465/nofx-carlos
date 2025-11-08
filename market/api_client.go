@@ -60,9 +60,9 @@ func (c *APIClient) GetExchangeInfo() (*ExchangeInfo, error) {
 	return &exchangeInfo, nil
 }
 
-// 获取近期成交（归集）
-func (c *APIClient) GetAggTrades(symbol string, limit int) ([]Trade, error) {
-	url := fmt.Sprintf("%s/fapi/v1/aggTrades", baseURL)
+// 获取近期成交
+func (c *APIClient) GetTrades(symbol string, limit int) ([]TradeDetail, error) {
+	url := fmt.Sprintf("%s/fapi/v1/trades", baseURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (c *APIClient) GetAggTrades(symbol string, limit int) ([]Trade, error) {
 		return nil, err
 	}
 
-	var trades []Trade
+	var trades []TradeDetail
 	for _, tr := range tradeInfo {
 		trade, err := parseTrade(tr)
 		if err != nil {
@@ -103,17 +103,17 @@ func (c *APIClient) GetAggTrades(symbol string, limit int) ([]Trade, error) {
 	return trades, nil
 }
 
-func parseTrade(tr TradeInfo) (Trade, error) {
-	var trade Trade
+func parseTrade(tr TradeInfo) (TradeDetail, error) {
+	var trade TradeDetail
 
 	// 设置直接匹配的字段
-	trade.Id = tr.Id
-	trade.Time = tr.Time
-	trade.IsTakerSell = tr.IsTakerSell
+	trade.TradeID = tr.TradeID
+	trade.Timestamp = tr.Timestamp
+	trade.IsBuyerMaker = tr.IsBuyerMaker
 
 	// 处理Price字段的转换
 	trade.Price, _ = strconv.ParseFloat(tr.Price, 64)
-	trade.Qty, _ = strconv.ParseFloat(tr.Qty, 64)
+	trade.Quantity, _ = strconv.ParseFloat(tr.Quantity, 64)
 
 	return trade, nil
 }

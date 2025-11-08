@@ -127,40 +127,40 @@ func GetFullDecisionWithCustomPrompt(ctx *Context, mcpClient *mcp.Client, custom
 	systemPrompt := buildSystemPromptWithCustom(ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage, customPrompt, overrideBase, templateName)
 	userPrompt := buildUserPrompt(ctx)
 	/////////////////////////////////////////////////////////////////////////
-	var Decisions = []Decision{}
-	return &FullDecision{
-		CoTTrace:     "",
-		Decisions:    Decisions,
-		Timestamp:    time.Now(),
-		SystemPrompt: systemPrompt,
-		UserPrompt:   userPrompt,
-	}, nil
+	// var Decisions = []Decision{}
+	// return &FullDecision{
+	// 	CoTTrace:     "",
+	// 	Decisions:    Decisions,
+	// 	Timestamp:    time.Now(),
+	// 	SystemPrompt: systemPrompt,
+	// 	UserPrompt:   userPrompt,
+	// }, nil
 	////////////////////////////////////////////////////////////////////////
 
 	// 3. 调用AI API（使用 system + user prompt）
-	// aiResponse, err := mcpClient.CallWithMessages(systemPrompt, userPrompt)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("调用AI API失败: %w", err)
-	// }
+	aiResponse, err := mcpClient.CallWithMessages(systemPrompt, userPrompt)
+	if err != nil {
+		return nil, fmt.Errorf("调用AI API失败: %w", err)
+	}
 
-	// // 4. 解析AI响应
-	// decision, err := parseFullDecisionResponse(aiResponse, ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage)
+	// 4. 解析AI响应
+	decision, err := parseFullDecisionResponse(aiResponse, ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage, ctx.Account.PositionCount)
 
-	// // 无论是否有错误，都要保存 SystemPrompt 和 UserPrompt（用于调试和决策未执行后的问题定位）
-	// if decision != nil {
-	// 	decision.Timestamp = time.Now()
-	// 	decision.SystemPrompt = systemPrompt // 保存系统prompt
-	// 	decision.UserPrompt = userPrompt     // 保存输入prompt
-	// }
+	// 无论是否有错误，都要保存 SystemPrompt 和 UserPrompt（用于调试和决策未执行后的问题定位）
+	if decision != nil {
+		decision.Timestamp = time.Now()
+		decision.SystemPrompt = systemPrompt // 保存系统prompt
+		decision.UserPrompt = userPrompt     // 保存输入prompt
+	}
 
-	// if err != nil {
-	// 	return decision, fmt.Errorf("解析AI响应失败: %w", err)
-	// }
+	if err != nil {
+		return decision, fmt.Errorf("解析AI响应失败: %w", err)
+	}
 
-	// decision.Timestamp = time.Now()
-	// decision.SystemPrompt = systemPrompt // 保存系统prompt
-	// decision.UserPrompt = userPrompt     // 保存输入prompt
-	// return decision, nil
+	decision.Timestamp = time.Now()
+	decision.SystemPrompt = systemPrompt // 保存系统prompt
+	decision.UserPrompt = userPrompt     // 保存输入prompt
+	return decision, nil
 }
 
 // fetchMarketDataForContext 为上下文中的所有币种获取市场数据和OI数据
@@ -207,11 +207,11 @@ func fetchMarketDataForContext(ctx *Context) error {
 		isExistingPosition := positionSymbols[symbol]
 		if !isExistingPosition && data.OpenInterest != nil && data.CurrentPrice > 0 {
 			// 计算持仓价值（USD）= 持仓量 × 当前价格
-			oiValue := data.OpenInterest.Latest * data.CurrentPrice
+			oiValue := data.OpenInterest[len(data.OpenInterest)-1].OpenInterest * data.CurrentPrice
 			oiValueInMillions := oiValue / 1_000_000 // 转换为百万美元单位
 			if oiValueInMillions < minOIThresholdMillions {
 				log.Printf("⚠️  %s 持仓价值过低(%.2fM USD < %.1fM)，跳过此币种 [持仓量:%.0f × 价格:%.4f]",
-					symbol, oiValueInMillions, minOIThresholdMillions, data.OpenInterest.Latest, data.CurrentPrice)
+					symbol, oiValueInMillions, minOIThresholdMillions, data.OpenInterest[len(data.OpenInterest)-1].OpenInterest, data.CurrentPrice)
 				continue
 			}
 		}
@@ -324,8 +324,8 @@ func buildSystemPrompt(accountEquity float64, btcEthLeverage, altcoinLeverage in
 
 	// 2. 硬约束（风险控制）- 动态生成
 	sb.WriteString("# 硬约束（风险控制）\n\n")
-	sb.WriteString("1. 风险回报比: 必须 ≥ 1:3\n")
-	sb.WriteString("2. 最多持仓: 3个币种（质量>数量）\n")
+	sb.WriteString("1. 风险回报比: 必须 ≥ 1:2\n")
+	sb.WriteString("2. 最多持仓: 3个\n")
 	sb.WriteString(fmt.Sprintf("3. 单币仓位: 山寨%.0f-%.0f U | BTC/ETH %.0f-%.0f U\n",
 		accountEquity*0.8, accountEquity*1.5, accountEquity*5, accountEquity*10))
 	sb.WriteString(fmt.Sprintf("4. 杠杆限制: **山寨币最大%dx杠杆** | **BTC/ETH最大%dx杠杆** (⚠️ 严格执行，不可超过)\n", altcoinLeverage, btcEthLeverage))
@@ -368,7 +368,7 @@ func buildUserPrompt(ctx *Context) string {
 	}
 
 	// 账户
-	sb.WriteString(fmt.Sprintf("账户: 净值%.2f | 余额%.2f (%.1f%%) | 盈亏%+.2f%% | 保证金%.1f%% | 持仓%d个 | 手续费%.4f \n\n",
+	sb.WriteString(fmt.Sprintf("账户: 净值%.2f | 余额%.2f (%.1f%%) | 盈亏%+.2f%% | 保证金%.1f%% | 持仓%d个 | 手续费%.4f%% \n\n",
 		ctx.Account.TotalEquity,
 		ctx.Account.AvailableBalance,
 		(ctx.Account.AvailableBalance/ctx.Account.TotalEquity)*100,
@@ -454,7 +454,7 @@ func buildUserPrompt(ctx *Context) string {
 }
 
 // parseFullDecisionResponse 解析AI的完整决策响应
-func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthLeverage, altcoinLeverage int) (*FullDecision, error) {
+func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthLeverage, altcoinLeverage int, positionCount int) (*FullDecision, error) {
 	// 1. 提取思维链
 	cotTrace := extractCoTTrace(aiResponse)
 
@@ -468,7 +468,7 @@ func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthL
 	}
 
 	// 3. 验证决策
-	if err := validateDecisions(decisions, accountEquity, btcEthLeverage, altcoinLeverage); err != nil {
+	if err := validateDecisions(decisions, accountEquity, btcEthLeverage, altcoinLeverage, positionCount); err != nil {
 		return &FullDecision{
 			CoTTrace:  cotTrace,
 			Decisions: decisions,
@@ -642,9 +642,9 @@ func compactArrayOpen(s string) string {
 }
 
 // validateDecisions 验证所有决策（需要账户信息和杠杆配置）
-func validateDecisions(decisions []Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int) error {
+func validateDecisions(decisions []Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, positionCount int) error {
 	for i, decision := range decisions {
-		if err := validateDecision(&decision, accountEquity, btcEthLeverage, altcoinLeverage); err != nil {
+		if err := validateDecision(&decision, accountEquity, btcEthLeverage, altcoinLeverage, positionCount); err != nil {
 			return fmt.Errorf("决策 #%d 验证失败: %w", i+1, err)
 		}
 	}
@@ -674,7 +674,7 @@ func findMatchingBracket(s string, start int) int {
 }
 
 // validateDecision 验证单个决策的有效性
-func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int) error {
+func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, positionCount int) error {
 	// 验证action
 	validActions := map[string]bool{
 		"open_long":          true,
@@ -715,6 +715,9 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 
 	// 开仓操作必须提供完整参数
 	if d.Action == "open_long" || d.Action == "open_short" {
+		if positionCount >= 3 {
+			return fmt.Errorf("最多同时开%d仓位", positionCount)
+		}
 		// 根据币种使用配置的杠杆上限
 		maxLeverage := altcoinLeverage          // 山寨币使用配置的杠杆
 		maxPositionValue := accountEquity * 1.5 // 山寨币最多1.5倍账户净值
@@ -795,9 +798,9 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 			}
 		}
 
-		// 硬约束：风险回报比必须≥3.0
-		if riskRewardRatio < 3.0 {
-			return fmt.Errorf("风险回报比过低(%.2f:1)，必须≥3.0:1 [风险:%.2f%% 收益:%.2f%%] [止损:%.2f 止盈:%.2f]",
+		// 硬约束：风险回报比必须≥2.0
+		if riskRewardRatio < 2.0 {
+			return fmt.Errorf("风险回报比过低(%.2f:1)，必须≥2.0:1 [风险:%.2f%% 收益:%.2f%%] [止损:%.2f 止盈:%.2f]",
 				riskRewardRatio, riskPercent, rewardPercent, d.StopLoss, d.TakeProfit)
 		}
 	}

@@ -42,13 +42,6 @@ func Get(symbol string) (*Data, error) {
 		return nil, fmt.Errorf("获取4小时K线失败: %v", err)
 	}
 
-	// 获取最新成交数据
-	// var tradeData []Trade
-	// tradeData, err = WSMonitorCli.GetCurrentTrades(symbol)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("获取最新成交数据失败: %v", err)
-	// }
-
 	// 计算当前指标 (基于3分钟最新数据)
 	currentPrice := klines3m[len(klines3m)-1].Close
 	currentEMA20 := calculateEMA(klines3m, 20)
@@ -74,18 +67,6 @@ func Get(symbol string) (*Data, error) {
 		}
 	}
 
-	// 获取OI数据
-	// oiData, err := getOpenInterestData(symbol)
-	// 使用历史数据接口
-	oiData, err := getOpenInterestHistData(symbol, "5m", 5)
-	if err != nil {
-		// OI失败不影响整体,使用默认值
-		oiData = &OIData{Latest: 0, Average: 0}
-	}
-
-	// 获取Funding Rate
-	fundingRate, _ := getFundingRate(symbol)
-
 	// 计算日内系列数据 (3分钟)
 	intradayData := calculateIntradaySeries(klines3m)
 
@@ -99,58 +80,171 @@ func Get(symbol string) (*Data, error) {
 	// 计算长期数据 (4小时)
 	longerTermData := calculateLongerTermData(klines4h)
 
-	// 计算BuySellRatio
-	buySellRatio := getTakerlongshortRatioData(symbol, "5m", 5)
-
-	// 成交量比率
-	volumeRatio := CalculateVolumeRatio(klines1h, 10)
-
-	// 计算布林带（Bollinger Bandwidth）
-	bollingerBandMiddle, bollingerBandUpper, bollingerBandLower, err := CalculateBollingerBands(klines1h, 10, 2.0)
+	// 使用历史数据接口(当前数据补齐最后一条，所以减去一条历史数据)
+	oiData, err := fetchOIData(symbol, "1h", 9)
 	if err != nil {
-		return nil, fmt.Errorf("获取4h布林带失败: %v", err)
+		// OI失败不影响整体,使用默认值
+		return nil, fmt.Errorf("获取OI数据失败: %v", err)
 	}
 
-	// 成交量加权平均价（VWAP）
-	VWAP, err := CalculateVWAP(klines15m, 10)
-	if err != nil {
-		return nil, fmt.Errorf("获取15分钟VWAP失败: %v", err)
-	}
+	// 计算各种信号
+	signalData := make([]*Signal, 24)
+	// ATR
+	atrData := calculateATRData(klines4h, 14)
+	atrSignal := analyzeATRTrend(atrData, 5)
+	signalData = append(signalData, &atrSignal)
 
-	// CalculateCMF 计算蔡金资金流
-	CMFData, err := CalculateCMF(klines4h, 10)
-	if err != nil {
-		return nil, fmt.Errorf("获取4小时CMF失败: %v", err)
-	}
+	// AVL
+	avlData := calculateAVL(klines4h)
+	avlSignal := analyzeAVLSignal(avlData, 10)
+	signalData = append(signalData, &avlSignal)
 
-	// 4h周期OBV
-	OBVData, err := CalculateOBV(klines4h, 10)
+	// BOLL
+	bbData := calculateBollingerBands(klines1h, 20, 2.0)
+	bbSignal := analyzeBollingerSignal(bbData, 10)
+	signalData = append(signalData, &bbSignal)
+
+	// B.S Vol
+	// 获取最新成交数据
+	var simulatedTrades []TradeDetail
+	simulatedTrades, err = WSMonitorCli.GetCurrentTrades(symbol)
 	if err != nil {
-		return nil, fmt.Errorf("获取4小时VBO失败: %v", err)
+		return nil, fmt.Errorf("获取最新成交数据失败: %v", err)
+	}
+	volumeAnalysis := analyzeTradeFlow(simulatedTrades, 30)
+	bsVolSignal := generateBSVolumeSignal(volumeAnalysis, klines3m)
+	signalData = append(signalData, &bsVolSignal)
+
+	// CCI
+	cciData := calculateCCI(klines4h, 20)
+	cciSignal := analyzeCCISignal(cciData, 20)
+	signalData = append(signalData, &cciSignal)
+
+	// CMF
+	cmfData := calculateCMF(klines4h, 20)
+	cmfSignal := analyzeCMFSignal(cmfData)
+	signalData = append(signalData, &cmfSignal)
+
+	// DMI
+	dmiData := calculateDMI(klines4h, 14)
+	dmiSignal := analyzeDMISignal(dmiData, 20)
+	signalData = append(signalData, &dmiSignal)
+
+	// EMA20
+	emaData := calculateEMAData(klines15m, 20)
+	emaSignal := analyzeEMASignal(emaData, 5)
+	signalData = append(signalData, &emaSignal)
+
+	// EMV
+	emvData := calculateEMV(klines4h, 14, 9)
+	emvSignal := analyzeEMVSignal(emvData, 20)
+	signalData = append(signalData, &emvSignal)
+
+	// KDJ
+	kdjData := calculateKDJ(klines4h, 9, 3, 3)
+	kdjSignal := analyzeKDJSignal(kdjData, 20)
+	signalData = append(signalData, &kdjSignal)
+
+	// MACD
+	macdData := calculateMACDData(klines15m, 12, 26, 9)
+	macdSignal := analyzeMACDSignal(macdData, 20)
+	signalData = append(signalData, &macdSignal)
+
+	// MFI
+	mfiData := calculateMFI(klines4h, 14)
+	mfiSignal := analyzeMFISignal(mfiData, 20)
+	signalData = append(signalData, &mfiSignal)
+
+	// MTM
+	mtmData := calculateMTM(klines4h, 10, 6)
+	mtmSignal := analyzeMTMSignal(mtmData, 20)
+	signalData = append(signalData, &mtmSignal)
+
+	// OBV
+	obvData := CalculateOBV(klines15m)
+	obvSignal := analyzeOBVWithPeaks(obvData, 10)
+	signalData = append(signalData, &obvSignal)
+
+	// O.I.
+	oiSignal := analyzeOISignal(oiData, klines1h, 10)
+	signalData = append(signalData, &oiSignal)
+
+	//RSI
+	rsiData := calculateRSIData(klines3m, 14)
+	rsiSignal := analyzeRSISignal(rsiData, 20)
+	signalData = append(signalData, &rsiSignal)
+
+	// SAR
+	sarData := calculateSAR(klines4h, 0.02, 0.2, 0.02)
+	sarSignal := analyzeSARSignal(sarData, 10)
+	signalData = append(signalData, &sarSignal)
+
+	// STOCH RSI
+	stochRSIData := calculateStochRSI(klines4h, 14, 14, 3, 3)
+	stochRSISignal := analyzeStochRSISignal(stochRSIData, 20)
+	signalData = append(signalData, &stochRSISignal)
+
+	//TRIX
+	trixData := calculateTRIX(klines4h, 15)
+	trixSignal := analyzeTRIXSignal(trixData, 20)
+	signalData = append(signalData, &trixSignal)
+
+	// Vol MA
+	volumeData := calculateVolumeMA(klines1h, 20)
+	volSignal := analyzeVolumeSignal(volumeData, 10)
+	signalData = append(signalData, &volSignal)
+
+	// VWAP
+	vwapData := calculateVWAP(klines15m, 20)
+	vwapSignal := analyzeVWAPSignal(vwapData, 5)
+	signalData = append(signalData, &vwapSignal)
+
+	// WMA
+	periods := []int{10, 30, 50} // 短期、中期、长期WMA
+	multiWMA := calculateMultiPeriodWMA(klines15m, periods)
+	// 使用WMA10作为主要分析对象
+	wma10Data := multiWMA[10]
+	// 分析WMA信号
+	wmaSignal := analyzeWMASignal(wma10Data, multiWMA)
+	signalData = append(signalData, &wmaSignal)
+
+	// WR
+	wrData := calculateWR(klines4h, 14)
+	wrSignal := analyzeWRSignal(wrData, 20)
+	signalData = append(signalData, &wrSignal)
+
+	// 资金费率
+	fundingRate, _ := getFundingRate(symbol)
+	if fundingRate > 0 {
+		signalData = append(signalData, &Signal{
+			Target:     "FundingRate",
+			Side:       "sell",
+			Confidence: 0.9,
+			Message:    "资金费率大于0，开空信号",
+		})
+	} else {
+		signalData = append(signalData, &Signal{
+			Target:     "FundingRate",
+			Side:       "buy",
+			Confidence: 0.9,
+			Message:    "资金费率小于0，开多信号",
+		})
 	}
 
 	return &Data{
-		Symbol:              symbol,
-		CurrentPrice:        currentPrice,
-		PriceChange1h:       priceChange1h,
-		PriceChange4h:       priceChange4h,
-		CurrentEMA20:        currentEMA20,
-		CurrentMACD:         currentMACD,
-		CurrentRSI7:         currentRSI7,
-		OpenInterest:        oiData,
-		FundingRate:         fundingRate,
-		IntradaySeries:      intradayData,
-		MidTermSeries15m:    midTermData15m,
-		MidTermSeries1h:     midTermData1h,
-		LongerTermContext:   longerTermData,
-		BuySellRatio:        buySellRatio,
-		VolumeRatio:         volumeRatio[len(volumeRatio)-1],
-		BollingerBandMiddle: bollingerBandMiddle,
-		BollingerBandUpper:  bollingerBandUpper,
-		BollingerBandLower:  bollingerBandLower,
-		VWAPVales:           VWAP,
-		CMFValues:           CMFData,
-		OBVValues:           OBVData,
+		Symbol:            symbol,
+		CurrentPrice:      currentPrice,
+		PriceChange1h:     priceChange1h,
+		PriceChange4h:     priceChange4h,
+		CurrentEMA20:      currentEMA20,
+		CurrentMACD:       currentMACD,
+		CurrentRSI7:       currentRSI7,
+		OpenInterest:      oiData,
+		IntradaySeries:    intradayData,
+		MidTermSeries15m:  midTermData15m,
+		MidTermSeries1h:   midTermData1h,
+		LongerTermContext: longerTermData,
+		Signals:           signalData,
 	}, nil
 }
 
@@ -415,28 +509,28 @@ func calculateLongerTermData(klines []Kline) *LongerTermData {
 	data.EMA50 = calculateEMA(klines, 50)
 
 	// 计算ATR
-	data.ATR3 = calculateATR(klines, 3)
-	data.ATR7 = calculateATR(klines, 7)
-	data.ATR14 = calculateATR(klines, 14)
+	// data.ATR3 = calculateATR(klines, 3)
+	// data.ATR7 = calculateATR(klines, 7)
+	// data.ATR14 = calculateATR(klines, 14)
 
 	// 计算成交量
-	if len(klines) > 0 {
-		data.CurrentVolume = klines[len(klines)-1].Volume
-		// 计算平均成交量
-		sum := 0.0
-		sum20 := 0.0
-		count := 0
-		for _, k := range klines {
-			sum += k.Volume
-			if count < 20 {
-				sum20 += k.Volume
-			}
-			count++
-		}
-		data.AverageVolume = sum / float64(len(klines))
-		// 最近20分成交均量
-		data.AverageVolume20 = sum20 / 20
-	}
+	// if len(klines) > 0 {
+	// 	data.CurrentVolume = klines[len(klines)-1].Volume
+	// 	// 计算平均成交量
+	// 	sum := 0.0
+	// 	sum20 := 0.0
+	// 	count := 0
+	// 	for _, k := range klines {
+	// 		sum += k.Volume
+	// 		if count < 20 {
+	// 			sum20 += k.Volume
+	// 		}
+	// 		count++
+	// 	}
+	// 	data.AverageVolume = sum / float64(len(klines))
+	// 	// 最近20分成交均量
+	// 	data.AverageVolume20 = sum20 / 20
+	// }
 
 	// 计算MACD和RSI序列
 	start := len(klines) - 10
@@ -456,327 +550,6 @@ func calculateLongerTermData(klines []Kline) *LongerTermData {
 	}
 
 	return data
-}
-
-// CalculateVolumeRatio 计算成交量比率 (当前成交量 / 平均成交量)
-func CalculateVolumeRatio(klines []Kline, period int) []float64 {
-	volumeData := make([]float64, len(klines))
-	for i, kline := range klines {
-		volumeMA := 0.0
-		volumeRatio := 0.0
-
-		// 计算成交量移动平均
-		if i >= period-1 {
-			sumVolume := 0.0
-			for j := 0; j < period; j++ {
-				vol := klines[i-j].Volume
-				sumVolume += vol
-			}
-			volumeMA = sumVolume / float64(period)
-			volumeRatio = kline.Volume / volumeMA
-		}
-
-		volumeData[i] = volumeRatio
-	}
-	return volumeData[len(volumeData)-period:]
-}
-
-// CalculateBollingerBandwidth 计算布林带带宽百分比
-func CalculateBollingerBandwidth(klines []Kline, period int, multiplier float64) []float64 {
-	// 提取收盘价
-	var closes []float64
-	for _, k := range klines {
-		closes = append(closes, k.Close)
-	}
-
-	if len(closes) < 50 {
-		return nil
-	}
-
-	if len(closes) < period {
-		return nil
-	}
-
-	bandwidths := make([]float64, len(closes))
-
-	for i := period - 1; i < len(closes); i++ {
-		// 计算中轨 (SMA)
-		sum := 0.0
-		for j := i - period + 1; j <= i; j++ {
-			sum += closes[j]
-		}
-		midBand := sum / float64(period)
-
-		// 计算标准差
-		variance := 0.0
-		for j := i - period + 1; j <= i; j++ {
-			deviation := closes[j] - midBand
-			variance += deviation * deviation
-		}
-		stdDev := math.Sqrt(variance / float64(period))
-
-		// 计算上下轨
-		upperBand := midBand + multiplier*stdDev
-		lowerBand := midBand - multiplier*stdDev
-
-		// 计算带宽百分比: (上轨 - 下轨) / 中轨 * 100%
-		bandwidths[i] = ((upperBand - lowerBand) / midBand) * 100
-	}
-	return bandwidths[len(bandwidths)-period:]
-}
-
-// CalculateBollingerBands 计算布林带
-func CalculateBollingerBands(klines []Kline, period int, multiplier float64) ([]float64, []float64, []float64, error) {
-	// 提取收盘价
-	var closes []float64
-
-	middleBand := make([]float64, len(klines))
-	upperBand := make([]float64, len(klines))
-	lowerBand := make([]float64, len(klines))
-
-	for i, kline := range klines {
-		closes = append(closes, kline.Close)
-		if i >= period-1 {
-			// 计算中轨
-			sum := 0.0
-			for j := 0; j < period; j++ {
-				sum += closes[i-j]
-			}
-			middle := sum / float64(period)
-
-			// 计算标准差
-			variance := 0.0
-			for j := 0; j < period; j++ {
-				diff := closes[i-j] - middle
-				variance += diff * diff
-			}
-			stdDev := math.Sqrt(variance / float64(period))
-
-			// 计算上下轨
-			upper := middle + (stdDev * multiplier)
-			lower := middle - (stdDev * multiplier)
-
-			middleBand[i] = middle
-			upperBand[i] = upper
-			lowerBand[i] = lower
-
-			// 计算带宽和 %b
-			// bandWidth := (upperBand - lowerBand) / middleBand
-			// percentB := (closePrice - lowerBand) / (upperBand - lowerBand)
-		}
-	}
-
-	return middleBand[len(middleBand)-period:], upperBand[len(upperBand)-period:], lowerBand[len(lowerBand)-period:], nil
-}
-
-// CalculateVWAP 计算成交量加权平均价
-func CalculateVWAP(data []Kline, period int) ([]float64, error) {
-	if len(data) <= 0 {
-		return nil, fmt.Errorf("数据长度过小")
-	}
-
-	data = data[len(data)-period:]
-	vwap := make([]float64, len(data))
-	cumulativeVolume := 0.0
-	cumulativeTypicalPriceVolume := 0.0
-
-	for i, point := range data {
-		// 典型价 = (高 + 低 + 收) / 3
-		typicalPrice := (point.High + point.Low + point.Close) / 3
-		typicalPriceVolume := typicalPrice * point.Volume
-
-		cumulativeTypicalPriceVolume += typicalPriceVolume
-		cumulativeVolume += point.Volume
-
-		if cumulativeVolume > 0 {
-			vwap[i] = cumulativeTypicalPriceVolume / cumulativeVolume
-		} else {
-			vwap[i] = 0.0
-		}
-	}
-
-	return vwap[len(vwap)-period:], nil
-}
-
-// CalculateCMF 计算蔡金资金流
-func CalculateCMF(data []Kline, period int) ([]float64, error) {
-	if len(data) < period {
-		return nil, fmt.Errorf("数据长度过小")
-	}
-	cmf := make([]float64, len(data))
-
-	for i := len(data) - period; i < len(data); i++ {
-		sumMoneyFlowVolume := 0.0
-		sumVolume := 0.0
-
-		for j := i - period + 1; j <= i; j++ {
-			point := data[j]
-			// 1. 计算资金流乘数
-			// 资金流乘数 = [(收盘价 - 最低价) - (最高价 - 收盘价)] / (最高价 - 最低价)
-			moneyFlowMultiplier := ((point.Close - point.Low) - (point.High - point.Close)) / (point.High - point.Low)
-			// 2. 计算资金流体积
-			moneyFlowVolume := moneyFlowMultiplier * point.Volume
-
-			sumMoneyFlowVolume += moneyFlowVolume
-			sumVolume += point.Volume
-		}
-
-		// 3. 计算CMF
-		var currentCMF float64
-		if sumVolume != 0 {
-			currentCMF = sumMoneyFlowVolume / sumVolume
-		} else {
-			currentCMF = 0.0 // 避免除零错误
-		}
-		cmf = append(cmf, currentCMF)
-	}
-
-	return cmf[len(cmf)-period:], nil
-}
-
-// CalculateOBV 计算能量潮
-func CalculateOBV(klines []Kline, period int) ([]float64, error) {
-	// 提取收盘价
-	// 提取收盘价和成交量
-	var closes, volumes []float64
-	for _, point := range klines {
-		closes = append(closes, point.Close)
-		volumes = append(volumes, point.Volume)
-	}
-
-	if len(closes) < period {
-		return nil, fmt.Errorf("数据长度过小")
-	}
-
-	obv := make([]float64, len(closes))
-	obv[0] = volumes[0] // 初始OBV为第一天的成交量
-
-	for i := 1; i < len(closes); i++ {
-		if closes[i] > closes[i-1] {
-			// 当前收盘价 > 上一条收盘价，则OBV = 前一条OBV + 当前成交量
-			// 价格上涨，成交量加入OBV
-			obv[i] = obv[i-1] + volumes[i]
-		} else if closes[i] < closes[i-1] {
-			// 当前收盘价 < 上一条收盘价，则OBV = 前一条OBV - 当前成交量
-			// 价格下跌，成交量从OBV中减去
-			obv[i] = obv[i-1] - volumes[i]
-		} else {
-			// 价格持平，OBV不变
-			obv[i] = obv[i-1]
-		}
-	}
-
-	return obv[len(obv)-period:], nil
-}
-
-// getOpenInterestData 获取OI数据（获取当前未平仓合约数）
-func getOpenInterestData(symbol string) (*OIData, error) {
-	api_url := fmt.Sprintf("https://fapi.binance.com/fapi/v1/openInterest?symbol=%s", symbol)
-
-	// 设置代理地址（例如：127.0.0.1:1080）
-	proxyURL, err := url.Parse("http://127.0.0.1:8800")
-	if err != nil {
-		log.Fatalf("解析代理地址失败: %v", err)
-	}
-
-	// 创建自定义 Transport 并设置代理
-	transport := &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
-	}
-
-	// 创建 HTTP 客户端并使用自定义 Transport
-	client := &http.Client{
-		Transport: transport,
-	}
-
-	resp, err := client.Get(api_url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		OpenInterest string `json:"openInterest"`
-		Symbol       string `json:"symbol"`
-		Time         int64  `json:"time"`
-	}
-
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, err
-	}
-
-	oi, _ := strconv.ParseFloat(result.OpenInterest, 64)
-
-	return &OIData{
-		Latest:  oi,
-		Average: oi * 0.999, // 近似平均值
-	}, nil
-}
-
-// getOpenInterestHistData 获取OI趋势分析（合约持仓量历史）
-func getOpenInterestHistData(symbol string, period string, limit int) (*OIData, error) {
-	api_url := fmt.Sprintf("https://fapi.binance.com/futures/data/openInterestHist?symbol=%s&period=%s&limit=%s", symbol, period, limit)
-
-	// 设置代理地址（例如：127.0.0.1:1080）
-	proxyURL, err := url.Parse("http://127.0.0.1:8800")
-	if err != nil {
-		log.Fatalf("解析代理地址失败: %v", err)
-	}
-
-	// 创建自定义 Transport 并设置代理
-	transport := &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
-	}
-
-	// 创建 HTTP 客户端并使用自定义 Transport
-	client := &http.Client{
-		Transport: transport,
-	}
-
-	resp, err := client.Get(api_url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	type InterestData struct {
-		SumOpenInterest string `json:"sumOpenInterest"`
-		Symbol          string `json:"symbol"`
-		Timestamp       int64  `json:"timestamp"`
-	}
-
-	var data []InterestData
-	if err := json.Unmarshal(body, &data); err != nil {
-		return nil, err
-	}
-
-	ioTotal := 0.0
-	for _, item := range data {
-		io := 0.0
-		io, _ = strconv.ParseFloat(item.SumOpenInterest, 64)
-		ioTotal += io
-	}
-
-	// 获取当前OI
-	oIData, err := getOpenInterestData(symbol)
-	if err != nil {
-		return nil, err
-	}
-
-	return &OIData{
-		Latest:  oIData.Latest,
-		Average: ioTotal / float64(len(data)),
-	}, nil
 }
 
 // getTakerlongshortRatioData 合约主动买卖量,多空比率
@@ -900,18 +673,12 @@ func Format(data *Data) string {
 	sb.WriteString(fmt.Sprintf("current_price = %.8f, current_ema20 = %.3f, current_macd = %.3f, current_rsi (7 period) = %.3f\n\n",
 		data.CurrentPrice, data.CurrentEMA20, data.CurrentMACD, data.CurrentRSI7))
 
-	sb.WriteString(fmt.Sprintf("In addition, here is the latest %s open interest and funding rate and buySellRatio for perps:\n\n",
-		data.Symbol))
-
-	if data.OpenInterest != nil {
-		sb.WriteString(fmt.Sprintf("OI Latest:%.2f , OI Average: %.2f\n\n",
-			data.OpenInterest.Latest, data.OpenInterest.Average))
-	}
-
-	sb.WriteString(fmt.Sprintf("Funding Rate: %.8f\n\n", data.FundingRate))
-
-	if data.BuySellRatio >= 0 {
-		sb.WriteString(fmt.Sprintf("BuySellRatio: %.2f\n\n", data.BuySellRatio))
+	if len(data.Signals) > 0 {
+		sb.WriteString("CheckList:\n\n")
+		sb.WriteString("| Index| Side | Confidence | Message |\n\n")
+		for _, s := range data.Signals {
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.1f | %s |\n\n", s.Target, s.Side, s.Confidence, s.Message))
+		}
 	}
 
 	if data.IntradaySeries != nil {
@@ -960,10 +727,6 @@ func Format(data *Data) string {
 		if len(data.MidTermSeries15m.RSI14Values) > 0 {
 			sb.WriteString(fmt.Sprintf("- RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.MidTermSeries15m.RSI14Values)))
 		}
-
-		if len(data.VWAPVales) > 0 {
-			sb.WriteString(fmt.Sprintf("- VWAPV indicators: %s\n\n", formatFloatSlice(data.VWAPVales)))
-		}
 	}
 
 	if data.MidTermSeries1h != nil {
@@ -988,10 +751,6 @@ func Format(data *Data) string {
 		if len(data.MidTermSeries1h.RSI14Values) > 0 {
 			sb.WriteString(fmt.Sprintf("- RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.MidTermSeries1h.RSI14Values)))
 		}
-
-		if data.VolumeRatio > 0 {
-			sb.WriteString(fmt.Sprintf("- VolumeRatio: %.3f\n\n", data.VolumeRatio))
-		}
 	}
 
 	if data.LongerTermContext != nil {
@@ -1000,32 +759,12 @@ func Format(data *Data) string {
 		sb.WriteString(fmt.Sprintf("- 20‑Period EMA: %.3f vs. 50‑Period EMA: %.3f\n\n",
 			data.LongerTermContext.EMA20, data.LongerTermContext.EMA50))
 
-		sb.WriteString(fmt.Sprintf("- 3‑Period ATR: %.3f , 7‑Period ATR: %.3f , 14‑Period ATR: %.3f\n\n",
-			data.LongerTermContext.ATR3, data.LongerTermContext.ATR7, data.LongerTermContext.ATR14))
-
-		sb.WriteString(fmt.Sprintf("- Current Volume: %.3f , Average Volume: %.3f\n\n",
-			data.LongerTermContext.CurrentVolume, data.LongerTermContext.AverageVolume))
-
 		if len(data.LongerTermContext.MACDValues) > 0 {
 			sb.WriteString(fmt.Sprintf("- MACD indicators: %s\n\n", formatFloatSlice(data.LongerTermContext.MACDValues)))
 		}
 
 		if len(data.LongerTermContext.RSI14Values) > 0 {
 			sb.WriteString(fmt.Sprintf("- RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.LongerTermContext.RSI14Values)))
-		}
-
-		if len(data.BollingerBandLower) > 0 {
-			sb.WriteString(fmt.Sprintf("- BollingerBandLower indicators: %s\n\n", formatFloatSlice(data.BollingerBandLower)))
-			sb.WriteString(fmt.Sprintf("- BollingerBandMiddle indicators: %s\n\n", formatFloatSlice(data.BollingerBandMiddle)))
-			sb.WriteString(fmt.Sprintf("- BollingerBandUpper indicators: %s\n\n", formatFloatSlice(data.BollingerBandUpper)))
-		}
-
-		if len(data.OBVValues) > 0 {
-			sb.WriteString(fmt.Sprintf("- OBV indicators (20‑Period): %s\n\n", formatFloatSlice(data.OBVValues)))
-		}
-
-		if len(data.CMFValues) > 0 {
-			sb.WriteString(fmt.Sprintf("- CMF indicators (20‑Period): %s\n\n", formatFloatSlice(data.CMFValues)))
 		}
 	}
 
@@ -1064,4 +803,89 @@ func parseFloat(v interface{}) (float64, error) {
 	default:
 		return 0, fmt.Errorf("unsupported type: %T", v)
 	}
+}
+
+// checkAAboveB 检查A是否在B之上
+func CheckAAboveB(dataA, dataB []float64) bool {
+	aboveCount := 0
+	totalPoints := len(dataA)
+
+	for i := range totalPoints {
+		if dataA[i] > dataB[i] {
+			aboveCount++
+		}
+	}
+
+	// 如果A在B之上的点数超过80%，认为A在B之上
+	return float64(aboveCount)/float64(totalPoints) > 0.8
+}
+
+// LinearRegressionAnalysis 线性回归分析
+func LinearRegressionAnalysis(data []float64) (slope, strength float64) {
+	n := float64(len(data))
+	var sumX, sumY, sumXY, sumXX float64
+
+	for i, price := range data {
+		x := float64(i)
+		y := price
+		sumX += x
+		sumY += y
+		sumXY += x * y
+		sumXX += x * x
+	}
+
+	// 计算斜率
+	slope = (n*sumXY - sumX*sumY) / (n*sumXX - sumX*sumX)
+
+	// 计算趋势强度 (R-squared)
+	meanY := sumY / n
+	var totalSS, regSS float64
+	for i, price := range data {
+		x := float64(i)
+		predicted := (slope * x) + (sumY/n - slope*sumX/n)
+		totalSS += math.Pow(price-meanY, 2)
+		regSS += math.Pow(predicted-meanY, 2)
+	}
+
+	rSquared := 0.0
+	if totalSS > 0 {
+		rSquared = regSS / totalSS
+	}
+
+	// 斜率大于0表示上扬，小于0表示下跌，趋势强度使用R-squared
+	return slope, rSquared
+}
+
+// calculateAvgDistance 计算A和B之间的平均距离
+func CalculateAvgDistance(dataA, dataB []float64) float64 {
+	var totalDistance float64
+	for i := 0; i < len(dataA); i++ {
+		totalDistance += dataA[i] - dataB[i]
+	}
+	return totalDistance / float64(len(dataA))
+}
+
+// calculateCorrelation 计算A和B的相关性
+func CalculateCorrelation(dataA, dataB []float64) float64 {
+	n := float64(len(dataA))
+
+	var sumA, sumB, sumAB, sumA2, sumB2 float64
+	for i := range dataA {
+		a := dataA[i]
+		b := dataB[i]
+		sumA += a
+		sumB += b
+		sumAB += a * b
+		sumA2 += a * a
+		sumB2 += b * b
+	}
+
+	numerator := n*sumAB - sumA*sumB
+	denominator := math.Sqrt((n*sumA2 - sumA*sumA) * (n*sumB2 - sumB*sumB))
+
+	if denominator == 0 {
+		return 0
+	}
+
+	return numerator / denominator
 }

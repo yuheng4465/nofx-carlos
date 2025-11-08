@@ -217,7 +217,7 @@ func NewAutoTrader(config AutoTraderConfig, database interface{}, userID string)
 	systemPromptTemplate := config.SystemPromptTemplate
 	if systemPromptTemplate == "" {
 		// feature/partial-close-dynamic-tpsl 分支默认使用 adaptive（支持动态止盈止损）
-		systemPromptTemplate = "adaptive"
+		systemPromptTemplate = "adaptive_v2"
 	}
 
 	return &AutoTrader{
