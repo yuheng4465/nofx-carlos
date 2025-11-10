@@ -60,10 +60,29 @@ func calculateCMF(klines []Kline, period int) []*CMFData {
 	return cmfList
 }
 
+// 转换为字符串
+func getCMFDataString(cmfData []*CMFData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(cmfData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := cmfData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.CMF)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeCMFSignal 分析CMF数据，生成交易信号
-func analyzeCMFSignal(cmfData []*CMFData) Signal {
+func analyzeCMFSignal(cmfData []*CMFData, period string) *Signal {
 	if len(cmfData) < 5 {
-		return Signal{Target: "CMF", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetCMF, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	// 获取最近的数据点
@@ -72,19 +91,21 @@ func analyzeCMFSignal(cmfData []*CMFData) Signal {
 
 	// 信号1: 零轴穿越
 	if prev.CMF <= 0 && current.CMF > 0 {
-		return Signal{
-			Target:     "CMF",
+		return &Signal{
+			Target:     TargetCMF,
 			SignalType: "bullish_zero_cross",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "CMF由下向上穿越零轴，资金开始净流入，潜在开多信号",
 		}
 	}
 	if prev.CMF >= 0 && current.CMF < 0 {
-		return Signal{
-			Target:     "CMF",
+		return &Signal{
+			Target:     TargetCMF,
 			SignalType: "bearish_zero_cross",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "CMF由上向下穿越零轴，资金开始净流出，潜在开空信号",
 		}
@@ -92,19 +113,21 @@ func analyzeCMFSignal(cmfData []*CMFData) Signal {
 
 	// 信号2: 强势区间判断
 	if current.CMF > 0.05 { // 明显高于零轴
-		return Signal{
-			Target:     "CMF",
+		return &Signal{
+			Target:     TargetCMF,
 			SignalType: "bullish_strong",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "CMF持续在零轴上方，资金流入强劲，趋势看多",
 		}
 	}
 	if current.CMF < -0.05 { // 明显低于零轴
-		return Signal{
-			Target:     "CMF",
+		return &Signal{
+			Target:     TargetCMF,
 			SignalType: "bearish_strong",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "CMF持续在零轴下方，资金流出强劲，趋势看空",
 		}
@@ -112,29 +135,58 @@ func analyzeCMFSignal(cmfData []*CMFData) Signal {
 
 	// 信号3: 超买超卖 (可作为反向信号，但需谨慎)
 	if current.CMF > 0.25 {
-		return Signal{
-			Target:     "CMF",
+		return &Signal{
+			Target:     TargetCMF,
 			SignalType: "overbought",
-			Side:       "buy",
+			Side:       SideWaring,
+			Period:     period,
 			Confidence: 0.4,
 			Message:    "CMF显示超买，警惕回调，但强趋势中可能持续",
 		}
 	}
 	if current.CMF < -0.25 {
-		return Signal{
-			Target:     "CMF",
+		return &Signal{
+			Target:     TargetCMF,
 			SignalType: "oversold",
-			Side:       "sell",
+			Side:       SideWaring,
+			Period:     period,
 			Confidence: 0.4,
 			Message:    "CMF显示超卖，警惕反弹，但强趋势中可能持续",
 		}
 	}
 
-	return Signal{Target: "CMF", SignalType: "none", Side: "none", Confidence: 0, Message: "未发现明确信号"}
+	return &Signal{Target: TargetCMF, SignalType: "none", Side: SideNone, Confidence: 0.5, Message: "未发现明确信号"}
 }
 
-// 在主函数中调用
-func GetCmfSignal(klines []Kline, peroid int) Signal {
+// 根据1h和4h的CMF合并最终信号
+func getCMFSignalWithMultiple(cmfSignal1h *Signal, cmfSIgnal4h *Signal) *Signal {
+	// 4h定方向(如果方向背离则此项无效)
+	Side4h := cmfSIgnal4h.Side
+	Side1h := cmfSignal1h.Side
+	Side := Side4h
+	if Side1h != Side4h {
+		return &Signal{
+			Target:     TargetCMF,
+			SignalType: "",
+			Side:       SideWaring,
+			Confidence: 0,
+			Message:    "4h的CMF和1h方向相反，趋势矛盾",
+		}
+	}
+
+	// 1h定强度
+	confidence := cmfSignal1h.Confidence
+	message := cmfSignal1h.Message
+	return &Signal{
+		Target:     TargetCMF,
+		SignalType: "",
+		Side:       Side,
+		Confidence: confidence,
+		Message:    message,
+	}
+}
+
+func GetCmfSignal(klines []Kline, period int, tiemPeriod string) *Signal {
 	// 1.	绝不单独使用CMF：CMF必须与价格行为分析、趋势线、支撑/阻力位以及其他指标（如均线、MACD）结合使用，进行多重验证。
 
 	// 2.	时间框架选择：
@@ -146,10 +198,10 @@ func GetCmfSignal(klines []Kline, peroid int) Signal {
 	// 5.	趋势是你的朋友：在CMF持续高于零轴的上升趋势中，应主要寻找开多机会；在CMF持续低于零轴的下降趋势中，应主要寻找开空机会。不要轻易逆势操作。
 
 	// 计算CMF，通常使用20周期
-	cmfData := calculateCMF(klines, peroid)
+	cmfData := calculateCMF(klines, period)
 
 	// 分析信号
-	signal := analyzeCMFSignal(cmfData)
+	signal := analyzeCMFSignal(cmfData, tiemPeriod)
 
 	return signal
 }

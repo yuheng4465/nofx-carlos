@@ -22,23 +22,27 @@ type VolumeAnalysis struct {
 }
 
 // analyzeTradeFlow 分析成交流水，计算主动买卖量
-func analyzeTradeFlow(trades []TradeDetail, windowSize int) []VolumeAnalysis {
-	var analysis []VolumeAnalysis
-	var windowStart int
+func analyzeTradeFlow(trades []TradeDetail, windowSize int) []*VolumeAnalysis {
+	if len(trades) == 0 {
+		return nil
+	}
 
-	for i := range trades {
-		// 确保时间窗口
-		if i == 0 || trades[i].Timestamp-trades[windowStart].Timestamp >= int64(windowSize*1000) {
-			// 分析当前窗口
-			if i > windowStart {
-				windowAnalysis := calculateWindowVolume(trades[windowStart:i])
-				analysis = append(analysis, windowAnalysis)
-			}
+	var analysis []*VolumeAnalysis
+	windowStart := 0
+
+	for i := 1; i < len(trades); i++ {
+		// 检查当前交易是否超出当前窗口的时间范围
+		if trades[i].Timestamp-trades[windowStart].Timestamp >= int64(windowSize*1000) {
+			// 分析从 windowStart 到 i-1 的窗口（不包含当前交易i）
+			windowAnalysis := calculateWindowVolume(trades[windowStart:i])
+			analysis = append(analysis, windowAnalysis)
+
+			// 重要：更新窗口起始点为当前索引
 			windowStart = i
 		}
 	}
 
-	// 分析最后一个窗口
+	// 处理最后一个窗口（包含所有剩余交易）
 	if windowStart < len(trades) {
 		windowAnalysis := calculateWindowVolume(trades[windowStart:])
 		analysis = append(analysis, windowAnalysis)
@@ -48,7 +52,7 @@ func analyzeTradeFlow(trades []TradeDetail, windowSize int) []VolumeAnalysis {
 }
 
 // calculateWindowVolume 计算时间窗口内的成交量分析
-func calculateWindowVolume(trades []TradeDetail) VolumeAnalysis {
+func calculateWindowVolume(trades []TradeDetail) *VolumeAnalysis {
 	var totalVolume, activeBuyVolume, activeSellVolume float64
 	var latestPrice float64
 
@@ -76,7 +80,7 @@ func calculateWindowVolume(trades []TradeDetail) VolumeAnalysis {
 		volumeRatio = 10.0 // 极大值，表示只有主动买入
 	}
 
-	return VolumeAnalysis{
+	return &VolumeAnalysis{
 		Timestamp:        trades[len(trades)-1].Timestamp,
 		TotalVolume:      totalVolume,
 		ActiveBuyVolume:  activeBuyVolume,
@@ -87,10 +91,36 @@ func calculateWindowVolume(trades []TradeDetail) VolumeAnalysis {
 	}
 }
 
+// 转换为字符串
+func getBSVOLDataString(volumeAnalysis []*VolumeAnalysis, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(volumeAnalysis) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := volumeAnalysis[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.VolumeRatio)
+	}
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
+// 计算时间变化
+// func getpriceChanges(klines []Kline, volumeAnalysis []VolumeAnalysis) {
+
+// 	for _, volume := range volumeAnalysis {
+
+// 	}
+// }
+
 // generateBSVolumeSignal 生成主动买卖量交易信号
-func generateBSVolumeSignal(volumeAnalysis []VolumeAnalysis, priceChanges []Kline) Signal {
+func generateBSVolumeSignal(volumeAnalysis []*VolumeAnalysis, priceChanges []Kline) *Signal {
 	if len(volumeAnalysis) < 2 {
-		return Signal{Target: "BSVOL", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetBSVOL, SignalType: "none", Side: SideNone, Period: Period3m, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := volumeAnalysis[len(volumeAnalysis)-1]
@@ -106,10 +136,11 @@ func generateBSVolumeSignal(volumeAnalysis []VolumeAnalysis, priceChanges []Klin
 
 	// 信号1: 量价齐升（健康上涨）
 	if priceChange > 0.3 && current.NetVolume > 0 && current.VolumeRatio > 1.5 {
-		return Signal{
-			Target:     "BSVOL",
+		return &Signal{
+			Target:     TargetBSVOL,
 			SignalType: "strong_bullish_breakout",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     Period3m,
 			Confidence: 0.9,
 			Message:    "价涨量增，主动买入主导！健康上涨趋势，开多信号",
 		}
@@ -117,10 +148,11 @@ func generateBSVolumeSignal(volumeAnalysis []VolumeAnalysis, priceChanges []Klin
 
 	// 信号2: 量价齐跌（健康下跌）
 	if priceChange < -0.3 && current.NetVolume < 0 && current.VolumeRatio < 0.7 {
-		return Signal{
-			Target:     "BSVOL",
+		return &Signal{
+			Target:     TargetBSVOL,
 			SignalType: "strong_bearish_breakdown",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     Period3m,
 			Confidence: 0.9,
 			Message:    "价跌量增，主动卖出主导！健康下跌趋势，开空信号",
 		}
@@ -128,10 +160,11 @@ func generateBSVolumeSignal(volumeAnalysis []VolumeAnalysis, priceChanges []Klin
 
 	// 信号3: 放量滞涨（顶部信号）
 	if priceChange < 0.1 && current.TotalVolume > prev.TotalVolume*1.5 && current.NetVolume < 0 {
-		return Signal{
-			Target:     "BSVOL",
+		return &Signal{
+			Target:     TargetBSVOL,
 			SignalType: "distribution_top",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     Period3m,
 			Confidence: 0.8,
 			Message:    "放量滞涨，主动卖出涌现！大资金派发，看空信号",
 		}
@@ -139,10 +172,11 @@ func generateBSVolumeSignal(volumeAnalysis []VolumeAnalysis, priceChanges []Klin
 
 	// 信号4: 缩量止跌（底部信号）
 	if priceChange > -0.1 && current.TotalVolume < prev.TotalVolume*0.7 && current.NetVolume > 0 {
-		return Signal{
-			Target:     "BSVOL",
+		return &Signal{
+			Target:     TargetBSVOL,
 			SignalType: "accumulation_bottom",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     Period3m,
 			Confidence: 0.8,
 			Message:    "缩量止跌，主动买入承接！大资金吸筹，看多信号",
 		}
@@ -152,10 +186,11 @@ func generateBSVolumeSignal(volumeAnalysis []VolumeAnalysis, priceChanges []Klin
 	if len(volumeAnalysis) >= 10 {
 		// 价格创新高但主动买入量未创新高
 		if priceChange > 0 && current.NetVolume < prev.NetVolume {
-			return Signal{
-				Target:     "BSVOL",
+			return &Signal{
+				Target:     TargetBSVOL,
 				SignalType: "bearish_divergence",
-				Side:       "none",
+				Side:       SideWaring,
+				Period:     Period3m,
 				Confidence: 0.7,
 				Message:    "顶背离！价格创新高但主动买入力量减弱",
 			}
@@ -163,10 +198,11 @@ func generateBSVolumeSignal(volumeAnalysis []VolumeAnalysis, priceChanges []Klin
 
 		// 价格创新低但主动卖出量未创新低
 		if priceChange < 0 && current.NetVolume > prev.NetVolume {
-			return Signal{
-				Target:     "BSVOL",
+			return &Signal{
+				Target:     TargetBSVOL,
 				SignalType: "bullish_divergence",
-				Side:       "none",
+				Side:       SideWaring,
+				Period:     Period3m,
 				Confidence: 0.7,
 				Message:    "底背离！价格创新低但主动卖出力量减弱",
 			}
@@ -175,29 +211,31 @@ func generateBSVolumeSignal(volumeAnalysis []VolumeAnalysis, priceChanges []Klin
 
 	// 信号6: 大单分析（简化版）
 	if current.ActiveBuyVolume > current.ActiveSellVolume*3 {
-		return Signal{
-			Target:     "BSVOL",
+		return &Signal{
+			Target:     TargetBSVOL,
 			SignalType: "large_buy_orders",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     Period3m,
 			Confidence: 0.6,
 			Message:    "大单买入明显，资金积极进场",
 		}
 	}
 
 	if current.ActiveSellVolume > current.ActiveBuyVolume*3 {
-		return Signal{
-			Target:     "BSVOL",
+		return &Signal{
+			Target:     TargetBSVOL,
 			SignalType: "large_sell_orders",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     Period3m,
 			Confidence: 0.6,
 			Message:    "大单卖出明显，资金积极离场",
 		}
 	}
 
-	return Signal{Target: "BSVOL", SignalType: "none", Side: "none", Confidence: 0.5, Message: "未发现明确信号"}
+	return &Signal{Target: TargetBSVOL, SignalType: "none", Side: SideNone, Period: Period3m, Confidence: 0.5, Message: "未发现明确信号"}
 }
 
-func GetBSVolSignal(simulatedTrades []TradeDetail, klines []Kline) Signal {
+func getBSVolSignal(simulatedTrades []TradeDetail, klines []Kline) *Signal {
 	// 分析成交流水（30秒窗口）
 
 	// 	1.	数据获取：

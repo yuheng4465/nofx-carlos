@@ -55,10 +55,29 @@ func calculateVolumeMA(klines []Kline, period int) []*VolumeData {
 	return volumeData
 }
 
+// 转换为字符串
+func getVolDataString(volumeData []*VolumeData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(volumeData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := volumeData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.Volume)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeVolumeSignal 分析成交量数据，生成交易信号
-func analyzeVolumeSignal(volumeData []*VolumeData, lookback int) Signal {
+func analyzeVolumeSignal(volumeData []*VolumeData, lookback int, period string) *Signal {
 	if len(volumeData) < lookback+1 {
-		return Signal{Target: "VOL", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetVOL, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := volumeData[len(volumeData)-1]
@@ -72,18 +91,20 @@ func analyzeVolumeSignal(volumeData []*VolumeData, lookback int) Signal {
 	// 信号1: 放量突破/跌破
 	if current.VolumeRatio > highVolumeThreshold {
 		if current.PriceChangePercent > 1.0 { // 价格显著上涨
-			return Signal{
-				Target:     "VOL",
+			return &Signal{
+				Target:     TargetVOL,
 				SignalType: "strong_bullish_breakout",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.8,
 				Message:    "放量上涨！买盘强劲，强烈开多信号！",
 			}
 		} else if current.PriceChangePercent < -1.0 { // 价格显著下跌
-			return Signal{
-				Target:     "VOL",
+			return &Signal{
+				Target:     TargetVOL,
 				SignalType: "strong_bearish_breakout",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.8,
 				Message:    "放量下跌！卖盘恐慌，强烈开空信号！",
 			}
@@ -94,20 +115,22 @@ func analyzeVolumeSignal(volumeData []*VolumeData, lookback int) Signal {
 	if current.VolumeRatio < lowVolumeThreshold {
 		// 在上升趋势中的缩量回调 (需要结合价格位置判断，这里简化)
 		if current.PriceChangePercent < 0 {
-			return Signal{
-				Target:     "VOL",
+			return &Signal{
+				Target:     TargetVOL,
 				SignalType: "bullish_pullback",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "缩量回调，卖压不足，潜在开多机会",
 			}
 		}
 		// 在下跌趋势中的缩量反弹
 		if current.PriceChangePercent > 0 {
-			return Signal{
-				Target:     "VOL",
+			return &Signal{
+				Target:     TargetVOL,
 				SignalType: "bearish_rally",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "缩量反弹，买盘不济，潜在开空机会",
 			}
@@ -121,10 +144,11 @@ func analyzeVolumeSignal(volumeData []*VolumeData, lookback int) Signal {
 		_, recentVolumeHighIndex := findVolumeHigh(volumeData, lookback)
 
 		if recentPriceHighIndex == len(volumeData)-1 && recentVolumeHighIndex != len(volumeData)-1 {
-			return Signal{
-				Target:     "VOL",
+			return &Signal{
+				Target:     TargetVOL,
 				SignalType: "bearish_divergence",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.7,
 				Message:    "量价顶背离：价格创新高但成交量未跟上，上涨动能减弱，警惕反转！",
 			}
@@ -135,17 +159,18 @@ func analyzeVolumeSignal(volumeData []*VolumeData, lookback int) Signal {
 		_, recentVolumeLowIndex := findVolumeLow(volumeData, lookback)
 
 		if recentPriceLowIndex == len(volumeData)-1 && recentVolumeLowIndex != len(volumeData)-1 {
-			return Signal{
-				Target:     "VOL",
+			return &Signal{
+				Target:     TargetVOL,
 				SignalType: "bullish_divergence",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.7,
 				Message:    "量价底背离：价格创新低但成交量未放大，卖压衰竭，潜在底部！",
 			}
 		}
 	}
 
-	return Signal{Target: "VOL", SignalType: "none", Side: "none", Confidence: 0, Message: "未发现明确成交量信号"}
+	return &Signal{Target: TargetVOL, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确成交量信号"}
 }
 
 // 辅助函数：寻找价格高点
@@ -217,7 +242,7 @@ func findVolumeLow(data []*VolumeData, lookback int) (float64, int) {
 }
 
 // 在主函数中调用
-func GetVolumeMaSignal(klines []Kline, period int) Signal {
+func GetVolumeMaSignal(klines []Kline, period int, timePeriod string) *Signal {
 	// 1.	成交量先于价格：很多时候，成交量的异动会发生在价格大幅变动之前。密切关注“无量”和“天量”的异常情况。
 	// 2.	结合价格位置和趋势：同样的放量，发生在价格高位和低位意义完全不同。高位放量多是派发（卖），低位放量多是吸筹（买）。
 	// 3.	与关键价位结合：成交量分析在支撑位、阻力位、趋势线附近最为有效。在这些位置出现的放量突破/跌破，信号最可靠。
@@ -233,11 +258,11 @@ func GetVolumeMaSignal(klines []Kline, period int) Signal {
 	// 计算阻力位和支撑位
 	// analysis, err := GetBTCAnalysis(klines)
 	// if err != nil {
-	// 	return Signal{Target: "VOL", SignalType: "none", Side: "none", Confidence: 0, Message: "数据计算失败"}
+	// 	return Signal{Target: TargetVOL, SignalType: "none", Side: "none", Confidence: 0, Message: "数据计算失败"}
 	// }
 
 	// 分析成交量信号
-	signal := analyzeVolumeSignal(volumeData, 10)
+	signal := analyzeVolumeSignal(volumeData, 10, timePeriod)
 
 	return signal
 }

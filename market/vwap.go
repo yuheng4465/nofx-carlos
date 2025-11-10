@@ -39,7 +39,12 @@ func calculateVWAP(klines []Kline, period int) []*VWAPData {
 		cumulativeVol += volume
 
 		// 计算VWAP
-		vwapValue := cumulativeTPV / cumulativeVol
+		var vwapValue float64
+		if cumulativeVol > 0 {
+			vwapValue = cumulativeTPV / cumulativeVol
+		} else {
+			vwapValue = 0
+		}
 
 		vwapList = append(vwapList, &VWAPData{
 			OpenTime:                     kline.OpenTime,
@@ -55,10 +60,29 @@ func calculateVWAP(klines []Kline, period int) []*VWAPData {
 	return vwapList
 }
 
+// 转换为字符串
+func getVWAPDataString(vwapData []*VWAPData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(vwapData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := vwapData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.VWAP)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeVWAPSignal 分析VWAP数据，生成交易信号
-func analyzeVWAPSignal(vwapData []*VWAPData, lookback int) Signal {
+func analyzeVWAPSignal(vwapData []*VWAPData, lookback int, period string) *Signal {
 	if len(vwapData) < lookback+1 {
-		return Signal{Target: "VWAP", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetVWAP, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := vwapData[len(vwapData)-1]
@@ -75,10 +99,11 @@ func analyzeVWAPSignal(vwapData []*VWAPData, lookback int) Signal {
 
 	// 检测上穿：之前在下，现在在上
 	if prevPriceBelowVWAP && priceAboveVWAP {
-		return Signal{
-			Target:     "VWAP",
+		return &Signal{
+			Target:     TargetVWAP,
 			SignalType: "bullish_crossover",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "价格上穿VWAP，潜在开多信号",
 		}
@@ -86,10 +111,11 @@ func analyzeVWAPSignal(vwapData []*VWAPData, lookback int) Signal {
 
 	// 检测下穿：之前在上，现在在下
 	if prevPriceAboveVWAP && priceBelowVWAP {
-		return Signal{
-			Target:     "VWAP",
+		return &Signal{
+			Target:     TargetVWAP,
 			SignalType: "bearish_crossover",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "价格下穿VWAP，潜在开空信号",
 		}
@@ -113,10 +139,11 @@ func analyzeVWAPSignal(vwapData []*VWAPData, lookback int) Signal {
 
 	// 信号2: 趋势跟踪 - 价格在VWAP上方且VWAP本身在上扬
 	if isAAboveB && slope > 0 && correlation > 0.5 {
-		return Signal{
-			Target:     "VWAP",
+		return &Signal{
+			Target:     TargetVWAP,
 			SignalType: "bullish_trend",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "价格在VWAP上方且VWAP上升，上升趋势健康",
 		}
@@ -126,20 +153,21 @@ func analyzeVWAPSignal(vwapData []*VWAPData, lookback int) Signal {
 	isAAboveB = CheckAAboveB(VWAPList, priceList)
 	correlation = CalculateCorrelation(VWAPList, priceList)
 	if isAAboveB && slope < 0 && correlation > 0.5 {
-		return Signal{
-			Target:     "VWAP",
+		return &Signal{
+			Target:     TargetVWAP,
 			SignalType: "bearish_trend",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "价格在VWAP下方且VWAP下降，下降趋势强劲",
 		}
 	}
 
-	return Signal{Target: "VWAP", SignalType: "none", Side: "none", Confidence: 0, Message: "未发现明确信号，建议观望"}
+	return &Signal{Target: TargetVWAP, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确信号，建议观望"}
 }
 
 // 在主函数中调用
-func GetVWAPSignal(klines []Kline, period int) Signal {
+func GetVWAPSignal(klines []Kline, period int, timePeriod string) *Signal {
 	// 1.	VWAP是日内指标：VWAP在每个交易日结束时重置。因此，它对于日线图及以上的时间框架意义不大。它主要用于5分钟、15分钟、1小时等日内交易。
 	// 2.	必须结合价格行为：VWAP提供的信号必须用K线形态来确认。在VWAP支撑处出现看涨Pin Bar，或在VWAP阻力处出现看跌吞没，会大大增加信号的可靠性。
 	// 3.	结合成交量：当价格在VWAP处获得支撑或受到阻力时，如果伴随成交量的放大，则信号更强。
@@ -158,7 +186,7 @@ func GetVWAPSignal(klines []Kline, period int) Signal {
 	vwapData := calculateVWAP(klines, period)
 
 	// 分析信号
-	signal := analyzeVWAPSignal(vwapData, 5)
+	signal := analyzeVWAPSignal(vwapData, 5, timePeriod)
 
 	return signal
 }

@@ -56,11 +56,30 @@ func calculateATRData(klines []Kline, period int) []*ATRData {
 	return atrList
 }
 
+// 转换为字符串
+func getATRDataString(atrData []*ATRData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(atrData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := atrData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.ATR)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeATRTrend 分析ATR的趋势，辅助判断市场状态
-func analyzeATRTrend(atrData []*ATRData, lookback int) Signal {
+func analyzeATRTrend(atrData []*ATRData, lookback int) *Signal {
 	var signal Signal
 	if len(atrData) < lookback+1 {
-		return Signal{Target: "ATR", SignalType: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetATR, Period: Period4h, SignalType: SideNone, Confidence: 0, Message: "数据不足"}
 	}
 
 	currentATR := atrData[len(atrData)-1].ATR
@@ -68,8 +87,9 @@ func analyzeATRTrend(atrData []*ATRData, lookback int) Signal {
 
 	threshold := 0.1 // 10%的变化阈值
 
-	signal.Target = "ATR"
-	signal.Side = "none"
+	signal.Target = TargetATR
+	signal.Period = Period4h
+	signal.Side = SideNone
 	if currentATR > prevATR*(1+threshold) {
 		signal.SignalType = "volatility_expanding" // 波动性扩张
 		signal.Message = "波动性正在扩张 - 趋势可能启动或加速"
@@ -84,10 +104,10 @@ func analyzeATRTrend(atrData []*ATRData, lookback int) Signal {
 		signal.Confidence = 0.5
 	}
 
-	return signal
+	return &signal
 }
 
-func GetATRSignal(klines []Kline, period int) Signal {
+func getATRSignal(klines []Kline, period int) *Signal {
 	// 1、开多/开空的时机选择（过滤器）：
 	// - 避免在ATR极低（波动收缩）时盲目交易，应等待波动性扩张伴随方向性突破。
 	// - 利用ATR从低位抬头的时机，结合趋势指标捕捉趋势起始点。

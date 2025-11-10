@@ -14,18 +14,33 @@ type MFIData struct {
 	NegativeFlow float64 // 负资金流
 }
 
-// MFISignal 存储MFI分析信号
-type MFISignal struct {
-	SignalType string
-	Confidence float64
-	Message    string
-}
-
 // calculateMFI 计算资金流量指数
 func calculateMFI(klines []Kline, period int) []*MFIData {
 	var mfiData []*MFIData
 	var typicalPrices []float64
 	var rawMoneyFlows []float64
+
+	// 收盘价、最高价、最低价
+	// var closes, highs, lows, vols []float64
+	// for _, kline := range klines {
+	// 	closes = append(closes, kline.Close)
+	// 	highs = append(highs, kline.High)
+	// 	lows = append(lows, kline.Low)
+	// 	vols = append(vols, kline.Volume)
+	// }
+
+	// mfi := talib.Mfi(highs, lows, closes, vols, period)
+	// for i, m := range mfi {
+	// 	mfiData = append(mfiData, &MFIData{
+	// 		ClosePrice: closes[i],
+	// 		HighPrice:  highs[i],
+	// 		LowPrice:   lows[i],
+	// 		Volume:     vols[i],
+	// 		MFI:        m,
+	// 	})
+	// }
+
+	// return mfiData
 
 	for i, kline := range klines {
 		high := kline.High
@@ -96,10 +111,29 @@ func calculateMFI(klines []Kline, period int) []*MFIData {
 	return mfiData
 }
 
+// 转换为字符串
+func getMFIDataString(mfiData []*MFIData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(mfiData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := mfiData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.MFI)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeMFISignal 分析MFI数据，生成交易信号
-func analyzeMFISignal(mfiData []*MFIData, lookback int) Signal {
+func analyzeMFISignal(mfiData []*MFIData, lookback int, period string) *Signal {
 	if len(mfiData) < lookback+1 {
-		return Signal{Target: "MFI", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetMFI, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := mfiData[len(mfiData)-1]
@@ -108,10 +142,11 @@ func analyzeMFISignal(mfiData []*MFIData, lookback int) Signal {
 	// 信号1: 超买超卖线穿越
 	// 从下方上穿20线 (超卖反弹)
 	if prev.MFI < 20 && current.MFI >= 20 {
-		return Signal{
-			Target:     "MFI",
+		return &Signal{
+			Target:     TargetMFI,
 			SignalType: "bullish_oversold",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "MFI从超卖区反弹！资金开始流入，强烈开多信号",
 		}
@@ -119,10 +154,11 @@ func analyzeMFISignal(mfiData []*MFIData, lookback int) Signal {
 
 	// 从上方下穿80线 (超买回落)
 	if prev.MFI > 80 && current.MFI <= 80 {
-		return Signal{
-			Target:     "MFI",
+		return &Signal{
+			Target:     TargetMFI,
 			SignalType: "bearish_overbought",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "MFI从超买区回落！资金开始流出，强烈开空信号",
 		}
@@ -132,10 +168,11 @@ func analyzeMFISignal(mfiData []*MFIData, lookback int) Signal {
 	// 在强势区域上穿50
 	if current.MFI > 30 && current.MFI < 70 {
 		if prev.MFI < 50 && current.MFI >= 50 {
-			return Signal{
-				Target:     "MFI",
+			return &Signal{
+				Target:     TargetMFI,
 				SignalType: "bullish_momentum",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.7,
 				Message:    "MFI上穿50中轴，资金流入占据主导",
 			}
@@ -145,10 +182,11 @@ func analyzeMFISignal(mfiData []*MFIData, lookback int) Signal {
 	// 在弱势区域下穿50
 	if current.MFI > 30 && current.MFI < 70 {
 		if prev.MFI > 50 && current.MFI <= 50 {
-			return Signal{
-				Target:     "MFI",
+			return &Signal{
+				Target:     TargetMFI,
 				SignalType: "bearish_momentum",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.7,
 				Message:    "MFI下穿50中轴，资金流出占据主导",
 			}
@@ -160,20 +198,22 @@ func analyzeMFISignal(mfiData []*MFIData, lookback int) Signal {
 	bearishDivergence := detectMFIBearishDivergence(mfiData, lookback)
 
 	if bullishDivergence {
-		return Signal{
-			Target:     "MFI",
+		return &Signal{
+			Target:     TargetMFI,
 			SignalType: "strong_bullish_divergence",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现MFI底背离！价格创新低但资金未流出，强烈开多信号",
 		}
 	}
 
 	if bearishDivergence {
-		return Signal{
-			Target:     "MFI",
+		return &Signal{
+			Target:     TargetMFI,
 			SignalType: "strong_bearish_divergence",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现MFI顶背离！价格创新高但资金未流入，强烈开空信号",
 		}
@@ -181,26 +221,28 @@ func analyzeMFISignal(mfiData []*MFIData, lookback int) Signal {
 
 	// 信号4: 极端值警告
 	if current.MFI > 90 {
-		return Signal{
-			Target:     "MFI",
+		return &Signal{
+			Target:     TargetMFI,
 			SignalType: "extreme_overbought",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "MFI极度超买 >90，警惕大幅回调",
 		}
 	}
 
 	if current.MFI < 10 {
-		return Signal{
-			Target:     "MFI",
+		return &Signal{
+			Target:     TargetMFI,
 			SignalType: "extreme_oversold",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "MFI极度超卖 <10，关注强势反弹",
 		}
 	}
 
-	return Signal{Target: "MFI", SignalType: "none", Side: "none", Confidence: 0, Message: "未发现明确MFI信号"}
+	return &Signal{Target: TargetMFI, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确MFI信号"}
 }
 
 // detectMFIBullishDivergence 检测MFI底背离
@@ -325,7 +367,7 @@ func findMFILow(data []*MFIData, lookback int) (float64, int) {
 
 // 类似的 findPriceHighMFI, findMFIHigh 函数...
 
-func GetMFISignal(klines []Kline, peroid int) Signal {
+func GetMFISignal(klines []Kline, peroid int, timePeriod string) *Signal {
 	// 1.	MFI参数优化：
 	// o	标准参数：14周期（平衡敏感度和稳定性）
 	// o	短线交易：9-12周期（更敏感）
@@ -366,7 +408,7 @@ func GetMFISignal(klines []Kline, peroid int) Signal {
 	mfiData := calculateMFI(klines, peroid)
 
 	// 分析MFI信号
-	signal := analyzeMFISignal(mfiData, 20)
+	signal := analyzeMFISignal(mfiData, 20, timePeriod)
 
 	return signal
 }

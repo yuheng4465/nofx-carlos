@@ -128,10 +128,29 @@ func min(a, b float64) float64 {
 	return b
 }
 
+// 转换为字符串
+func getSARDataString(sarData []*SARData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(sarData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := sarData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.SAR)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeSARSignal 分析SAR数据，生成交易信号
-func analyzeSARSignal(sarData []*SARData, lookback int) Signal {
+func analyzeSARSignal(sarData []*SARData, lookback int, period string) *Signal {
 	if len(sarData) < lookback+1 {
-		return Signal{Target: "SAR", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetSAR, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := sarData[len(sarData)-1]
@@ -140,18 +159,20 @@ func analyzeSARSignal(sarData []*SARData, lookback int) Signal {
 	// 信号1: 趋势反转信号
 	if prev.Trend != current.Trend {
 		if current.Trend == "up" {
-			return Signal{
-				Target:     "SAR",
+			return &Signal{
+				Target:     TargetSAR,
 				SignalType: "bullish_reversal",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.9,
 				Message:    "SAR趋势转多！价格突破SAR点，强烈开多信号",
 			}
 		} else {
-			return Signal{
-				Target:     "SAR",
+			return &Signal{
+				Target:     TargetSAR,
 				SignalType: "bearish_reversal",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.9,
 				Message:    "SAR趋势转空！价格跌破SAR点，强烈开空信号",
 			}
@@ -164,10 +185,11 @@ func analyzeSARSignal(sarData []*SARData, lookback int) Signal {
 		distancePercent := (current.ClosePrice - current.SAR) / current.SAR * 100
 
 		if distancePercent > 5.0 {
-			return Signal{
-				Target:     "SAR",
+			return &Signal{
+				Target:     TargetSAR,
 				SignalType: "strong_bullish_trend",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.8,
 				Message:    "价格远离SAR点，上升趋势强劲",
 			}
@@ -175,19 +197,21 @@ func analyzeSARSignal(sarData []*SARData, lookback int) Signal {
 
 		// 检查AF加速因子
 		if current.AF > 0.05 {
-			return Signal{
-				Target:     "SAR",
+			return &Signal{
+				Target:     TargetSAR,
 				SignalType: "bullish_acceleration",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.7,
 				Message:    "SAR加速上行，上涨动量增强",
 			}
 		}
 
-		return Signal{
-			Target:     "SAR",
+		return &Signal{
+			Target:     TargetSAR,
 			SignalType: "bullish_trend",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "上升趋势持续，持有多头",
 		}
@@ -196,36 +220,39 @@ func analyzeSARSignal(sarData []*SARData, lookback int) Signal {
 		distancePercent := (current.SAR - current.ClosePrice) / current.SAR * 100
 
 		if distancePercent > 5.0 {
-			return Signal{
-				Target:     "SAR",
+			return &Signal{
+				Target:     TargetSAR,
 				SignalType: "strong_bearish_trend",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.8,
 				Message:    "价格远离SAR点，下跌趋势强劲",
 			}
 		}
 
 		if current.AF > 0.05 {
-			return Signal{
-				Target:     "SAR",
+			return &Signal{
+				Target:     TargetSAR,
 				SignalType: "bearish_acceleration",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.7,
 				Message:    "SAR加速下行，下跌动量增强",
 			}
 		}
 
-		return Signal{
-			Target:     "SAR",
+		return &Signal{
+			Target:     TargetSAR,
 			SignalType: "bearish_trend",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "下降趋势持续，持有空头",
 		}
 	}
 }
 
-func GetSARSignal(klines []Kline) Signal {
+func GetSARSignal(klines []Kline, period string) *Signal {
 	// 1.	SAR参数优化：
 	// o	标准参数：AF=0.02, Max AF=0.2, Step=0.02
 	// o	敏感参数：AF=0.01, Max AF=0.1, Step=0.01（更适合短线）
@@ -266,7 +293,7 @@ func GetSARSignal(klines []Kline) Signal {
 	sarData := calculateSAR(klines, 0.02, 0.2, 0.02)
 
 	// 分析SAR信号
-	signal := analyzeSARSignal(sarData, 10)
+	signal := analyzeSARSignal(sarData, 10, period)
 
 	return signal
 }

@@ -1,5 +1,7 @@
 package market
 
+import "fmt"
+
 // EMVData 存储EMV数据点
 type EMVData struct {
 	OpenTime     int64
@@ -77,10 +79,31 @@ func calculateEMV(klines []Kline, period int, movingAvgPeriod int) []*EMVData {
 	return emvData
 }
 
+// 转换为字符串
+func getEMVDataString(emvData []*EMVData, period int) string {
+	var EMV, EMVMovingAvg []float64
+	// 取尾部数据
+	startIndex := len(emvData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := emvData[startIndex:]
+	for _, v := range lastData {
+		EMV = append(EMV, v.EMV)
+		EMVMovingAvg = append(EMVMovingAvg, v.EMVMovingAvg)
+	}
+
+	// 将字节切片转换为字符串
+	EMVStr := formatFloatSlice(EMV)
+	EMVMovingAvgStr := formatFloatSlice(EMVMovingAvg)
+
+	return fmt.Sprintf("EMV: %s , EMVMovingAvg: %s", EMVStr, EMVMovingAvgStr)
+}
+
 // analyzeEMVSignal 分析EMV数据，生成交易信号
-func analyzeEMVSignal(emvData []*EMVData, lookback int) Signal {
+func analyzeEMVSignal(emvData []*EMVData, lookback int, period string) *Signal {
 	if len(emvData) < lookback+1 {
-		return Signal{Target: "EMV", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetEMV, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := emvData[len(emvData)-1]
@@ -89,10 +112,11 @@ func analyzeEMVSignal(emvData []*EMVData, lookback int) Signal {
 	// 信号1: 零轴穿越
 	// EMV上穿零轴
 	if prev.EMV <= 0 && current.EMV > 0 {
-		return Signal{
-			Target:     "EMV",
+		return &Signal{
+			Target:     TargetEMV,
 			SignalType: "bullish_zero_cross",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "EMV上穿零轴！资金开始有效推动价格上涨，开多信号",
 		}
@@ -100,10 +124,11 @@ func analyzeEMVSignal(emvData []*EMVData, lookback int) Signal {
 
 	// EMV下穿零轴
 	if prev.EMV >= 0 && current.EMV < 0 {
-		return Signal{
-			Target:     "EMV",
+		return &Signal{
+			Target:     TargetEMV,
 			SignalType: "bearish_zero_cross",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "EMV下穿零轴！资金开始有效推动价格下跌，开空信号",
 		}
@@ -113,18 +138,20 @@ func analyzeEMVSignal(emvData []*EMVData, lookback int) Signal {
 	// EMV金叉（上穿信号线）
 	if prev.EMV <= prev.EMVMovingAvg && current.EMV > current.EMVMovingAvg {
 		if current.EMV > 0 {
-			return Signal{
-				Target:     "EMV",
+			return &Signal{
+				Target:     TargetEMV,
 				SignalType: "bullish_golden_cross",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.7,
 				Message:    "EMV金叉且在零轴上方！资金效率加速向上，开多信号",
 			}
 		} else {
-			return Signal{
-				Target:     "EMV",
+			return &Signal{
+				Target:     TargetEMV,
 				SignalType: "potential_bullish_cross",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "EMV金叉但在零轴下方，可能反弹但需谨慎",
 			}
@@ -134,18 +161,20 @@ func analyzeEMVSignal(emvData []*EMVData, lookback int) Signal {
 	// EMV死叉（下穿信号线）
 	if prev.EMV >= prev.EMVMovingAvg && current.EMV < current.EMVMovingAvg {
 		if current.EMV < 0 {
-			return Signal{
-				Target:     "EMV",
+			return &Signal{
+				Target:     TargetEMV,
 				SignalType: "bearish_dead_cross",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.7,
 				Message:    "EMV死叉且在零轴下方！资金效率加速向下，开空信号",
 			}
 		} else {
-			return Signal{
-				Target:     "EMV",
+			return &Signal{
+				Target:     TargetEMV,
 				SignalType: "potential_bearish_cross",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "EMV死叉但在零轴上方，可能回调但需谨慎",
 			}
@@ -154,20 +183,22 @@ func analyzeEMVSignal(emvData []*EMVData, lookback int) Signal {
 
 	// 信号3: 资金效率强度
 	if current.EMV > 0 && current.EMV > prev.EMV {
-		return Signal{
-			Target:     "EMV",
+		return &Signal{
+			Target:     TargetEMV,
 			SignalType: "bullish_efficiency",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "EMV为正且加速上升，资金推动效率提高",
 		}
 	}
 
 	if current.EMV < 0 && current.EMV < prev.EMV {
-		return Signal{
-			Target:     "EMV",
+		return &Signal{
+			Target:     TargetEMV,
 			SignalType: "bearish_efficiency",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "EMV为负且加速下降，资金推动效率提高",
 		}
@@ -178,20 +209,22 @@ func analyzeEMVSignal(emvData []*EMVData, lookback int) Signal {
 	bearishDivergence := detectEMVBearishDivergence(emvData, lookback)
 
 	if bullishDivergence {
-		return Signal{
-			Target:     "EMV",
+		return &Signal{
+			Target:     TargetEMV,
 			SignalType: "strong_bullish_divergence",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现EMV底背离！价格创新低但资金效率未创新低，强烈开多信号",
 		}
 	}
 
 	if bearishDivergence {
-		return Signal{
-			Target:     "EMV",
+		return &Signal{
+			Target:     TargetEMV,
 			SignalType: "strong_bearish_divergence",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现EMV顶背离！价格创新高但资金效率未创新高，强烈开空信号",
 		}
@@ -199,26 +232,28 @@ func analyzeEMVSignal(emvData []*EMVData, lookback int) Signal {
 
 	// 信号5: 效率衰减预警
 	if current.EMV > 0 && current.EMV < prev.EMV {
-		return Signal{
-			Target:     "EMV",
+		return &Signal{
+			Target:     TargetEMV,
 			SignalType: "bullish_efficiency_decay",
-			Side:       "none",
+			Side:       SideNone,
+			Period:     period,
 			Confidence: 0.5,
 			Message:    "EMV为正但开始衰减，资金推动效率下降",
 		}
 	}
 
 	if current.EMV < 0 && current.EMV > prev.EMV {
-		return Signal{
-			Target:     "EMV",
+		return &Signal{
+			Target:     TargetEMV,
 			SignalType: "bearish_efficiency_decay",
-			Side:       "none",
+			Side:       SideNone,
+			Period:     period,
 			Confidence: 0.5,
 			Message:    "EMV为负但开始衰减，资金推动效率下降",
 		}
 	}
 
-	return Signal{Target: "EMV", SignalType: "none", Side: "none", Confidence: 0.5, Message: "未发现明确EMV信号"}
+	return &Signal{Target: TargetEMV, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确EMV信号"}
 }
 
 // detectEMVBullishDivergence 检测EMV底背离
@@ -341,7 +376,7 @@ func findEMVLow(data []*EMVData, lookback int) (float64, int) {
 	return low, index
 }
 
-func GetEMVSignal(klines []Kline, peroid int, movingAvgPeriod int) Signal {
+func GetEMVSignal(klines []Kline, peroid int, movingAvgPeriod int, timePeriod string) *Signal {
 	// 1.	EMV参数优化：
 	// o	标准参数：EMV(14), 信号线(9)
 	// o	短线交易：EMV(9), 信号线(6) - 更敏感
@@ -383,7 +418,7 @@ func GetEMVSignal(klines []Kline, peroid int, movingAvgPeriod int) Signal {
 	emvData := calculateEMV(klines, peroid, movingAvgPeriod)
 
 	// 分析EMV信号
-	signal := analyzeEMVSignal(emvData, 20)
+	signal := analyzeEMVSignal(emvData, 20, timePeriod)
 
 	return signal
 }

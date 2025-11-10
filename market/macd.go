@@ -10,18 +10,34 @@ type MACDData struct {
 	HistogramColor string  // 柱状线颜色
 }
 
-// MACDSignal 存储MACD分析信号
-type MACDSignal struct {
-	SignalType string
-	Confidence float64
-	Message    string
-}
-
-// calculateMACD 计算MACD指标
+// calculateMACDData 计算MACD指标
 func calculateMACDData(klines []Kline, fastPeriod, slowPeriod, signalPeriod int) []*MACDData {
+	if len(klines) == 0 {
+		return nil
+	}
+
 	var macdData []*MACDData
 	var emaFast, emaSlow float64
-	var emaFastPrev, emaSlowPrev float64
+
+	// 收盘价、最高价、最低价
+	// var closes []float64
+	// for _, kline := range klines {
+	// 	closes = append(closes, kline.Close)
+	// }
+
+	// outMACD, outMACDSignal, outMACDHist := talib.Macd(closes, fastPeriod, slowPeriod, signalPeriod)
+	// for i, macd := range outMACD {
+	// 	data := &MACDData{
+	// 		ClosePrice: closes[i],
+	// 		MACDLine:   macd,
+	// 		SignalLine: outMACDSignal[i],
+	// 		Histogram:  outMACDHist[i],
+	// 	}
+
+	// 	macdData = append(macdData, data)
+	// }
+
+	// return macdData
 
 	for i, kline := range klines {
 		closePrice := kline.Close
@@ -33,11 +49,11 @@ func calculateMACDData(klines []Kline, fastPeriod, slowPeriod, signalPeriod int)
 		} else {
 			// 计算快速EMA
 			multiplierFast := 2.0 / (float64(fastPeriod) + 1.0)
-			emaFast = (closePrice-emaFastPrev)*multiplierFast + emaFastPrev
+			emaFast = (closePrice-emaFast)*multiplierFast + emaFast
 
 			// 计算慢速EMA
 			multiplierSlow := 2.0 / (float64(slowPeriod) + 1.0)
-			emaSlow = (closePrice-emaSlowPrev)*multiplierSlow + emaSlowPrev
+			emaSlow = (closePrice-emaSlow)*multiplierSlow + emaSlow
 		}
 
 		// 计算MACD线
@@ -48,17 +64,28 @@ func calculateMACDData(klines []Kline, fastPeriod, slowPeriod, signalPeriod int)
 		if i == 0 {
 			signalLine = macdLine
 		} else if i < signalPeriod {
-			// 前signalPeriod期使用简单平均
+			// 确保macdData有足够的元素
+			if len(macdData) <= i {
+				signalLine = macdLine // 备用方案
+				continue
+			}
+
 			sum := 0.0
 			for j := 0; j <= i; j++ {
-				sum += macdData[j].MACDLine
+				if j < len(macdData) {
+					sum += macdData[j].MACDLine
+				}
 			}
 			signalLine = sum / float64(i+1)
 		} else {
-			// 使用EMA计算信号线
-			multiplierSignal := 2.0 / (float64(signalPeriod) + 1.0)
-			prevSignalLine := macdData[i-1].SignalLine
-			signalLine = (macdLine-prevSignalLine)*multiplierSignal + prevSignalLine
+			// 确保有前一个信号线
+			if i-1 < len(macdData) && macdData[i-1] != nil {
+				prevSignalLine := macdData[i-1].SignalLine
+				multiplierSignal := 2.0 / (float64(signalPeriod) + 1.0)
+				signalLine = (macdLine-prevSignalLine)*multiplierSignal + prevSignalLine
+			} else {
+				signalLine = macdLine // 备用方案
+			}
 		}
 
 		// 计算柱状图
@@ -68,25 +95,43 @@ func calculateMACDData(klines []Kline, fastPeriod, slowPeriod, signalPeriod int)
 			histogramColor = "red"
 		}
 
-		macdData = append(macdData, &MACDData{
+		data := &MACDData{
 			OpenTime:       kline.OpenTime,
 			ClosePrice:     closePrice,
 			MACDLine:       macdLine,
 			SignalLine:     signalLine,
 			Histogram:      histogram,
 			HistogramColor: histogramColor,
-		})
+		}
 
-		emaFastPrev = emaFast
-		emaSlowPrev = emaSlow
+		macdData = append(macdData, data)
 	}
 	return macdData
 }
 
+// 转换为字符串
+func getMACDDataString(macdData []*MACDData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(macdData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := macdData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.MACDLine)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeMACDSignal 分析MACD数据，生成交易信号
-func analyzeMACDSignal(macdData []*MACDData, lookback int) Signal {
+func analyzeMACDSignal(macdData []*MACDData, lookback int, period string) *Signal {
 	if len(macdData) < lookback+1 {
-		return Signal{Target: "MACD", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetMACD, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := macdData[len(macdData)-1]
@@ -96,18 +141,20 @@ func analyzeMACDSignal(macdData []*MACDData, lookback int) Signal {
 	// 金叉: MACD线从下向上穿过信号线
 	if prev.MACDLine <= prev.SignalLine && current.MACDLine > current.SignalLine {
 		if current.MACDLine > 0 {
-			return Signal{
-				Target:     "MACD",
+			return &Signal{
+				Target:     TargetMACD,
 				SignalType: "bullish_golden_cross_above_zero",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.8,
 				Message:    "零轴上金叉！强烈开多信号！",
 			}
 		} else {
-			return Signal{
-				Target:     "MACD",
+			return &Signal{
+				Target:     TargetMACD,
 				SignalType: "bullish_golden_cross_below_zero",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "零轴下金叉，潜在反弹机会，需谨慎",
 			}
@@ -117,18 +164,20 @@ func analyzeMACDSignal(macdData []*MACDData, lookback int) Signal {
 	// 死叉: MACD线从上向下穿过信号线
 	if prev.MACDLine >= prev.SignalLine && current.MACDLine < current.SignalLine {
 		if current.MACDLine < 0 {
-			return Signal{
-				Target:     "MACD",
+			return &Signal{
+				Target:     TargetMACD,
 				SignalType: "bearish_dead_cross_below_zero",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.8,
 				Message:    "零轴下死叉！强烈开空信号！",
 			}
 		} else {
-			return Signal{
-				Target:     "MACD",
+			return &Signal{
+				Target:     TargetMACD,
 				SignalType: "bearish_dead_cross_above_zero",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "零轴上死叉，可能回调，需谨慎",
 			}
@@ -137,20 +186,22 @@ func analyzeMACDSignal(macdData []*MACDData, lookback int) Signal {
 
 	// 信号2: 零轴穿越
 	if prev.MACDLine <= 0 && current.MACDLine > 0 {
-		return Signal{
-			Target:     "MACD",
+		return &Signal{
+			Target:     TargetMACD,
 			SignalType: "bullish_zero_cross",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "MACD上穿零轴！市场转多，开多信号",
 		}
 	}
 
 	if prev.MACDLine >= 0 && current.MACDLine < 0 {
-		return Signal{
-			Target:     "MACD",
+		return &Signal{
+			Target:     TargetMACD,
 			SignalType: "bearish_zero_cross",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "MACD下穿零轴！市场转空，开空信号",
 		}
@@ -158,20 +209,22 @@ func analyzeMACDSignal(macdData []*MACDData, lookback int) Signal {
 
 	// 信号3: 柱状线动量分析
 	if current.Histogram > 0 && current.Histogram > prev.Histogram {
-		return Signal{
-			Target:     "MACD",
+		return &Signal{
+			Target:     TargetMACD,
 			SignalType: "bullish_momentum",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "MACD柱状线向上加速，上涨动量增强",
 		}
 	}
 
 	if current.Histogram < 0 && current.Histogram < prev.Histogram {
-		return Signal{
-			Target:     "MACD",
+		return &Signal{
+			Target:     TargetMACD,
 			SignalType: "bearish_momentum",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "MACD柱状线向下加速，下跌动量增强",
 		}
@@ -182,26 +235,28 @@ func analyzeMACDSignal(macdData []*MACDData, lookback int) Signal {
 	bearishDivergence := detectMACDBearishDivergence(macdData, lookback)
 
 	if bullishDivergence {
-		return Signal{
-			Target:     "MACD",
+		return &Signal{
+			Target:     TargetMACD,
 			SignalType: "strong_bullish_divergence",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现MACD底背离！强烈开多信号！",
 		}
 	}
 
 	if bearishDivergence {
-		return Signal{
-			Target:     "MACD",
+		return &Signal{
+			Target:     TargetMACD,
 			SignalType: "strong_bearish_divergence",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现MACD顶背离！强烈开空信号！",
 		}
 	}
 
-	return Signal{Target: "MACD", SignalType: "none", Side: "none", Confidence: 0, Message: "未发现明确MACD信号"}
+	return &Signal{Target: TargetMACD, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确MACD信号"}
 }
 
 // detectMACDBullishDivergence 检测MACD底背离
@@ -325,7 +380,7 @@ func findMACDHistogramLow(data []*MACDData, lookback int) (float64, int) {
 }
 
 // 获取MACD信号
-func GetMACDSignal(klines []Kline, fastPeriod, slowPeriod, signalPeriod int) Signal {
+func getMACDSignal(klines []Kline, fastPeriod, slowPeriod, signalPeriod int, timePeriod string) *Signal {
 	// 1.	结合其他指标使用：MACD在趋势市中表现优异，但在震荡市中会产生大量假信号。务必结合：
 	// o	RSI：确认超买超卖状态
 	// o	布林带：识别波动性和价格位置
@@ -357,7 +412,7 @@ func GetMACDSignal(klines []Kline, fastPeriod, slowPeriod, signalPeriod int) Sig
 	macdData := calculateMACDData(klines, fastPeriod, slowPeriod, signalPeriod)
 
 	// 分析MACD信号
-	signal := analyzeMACDSignal(macdData, 20)
+	signal := analyzeMACDSignal(macdData, 20, timePeriod)
 
 	return signal
 }

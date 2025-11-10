@@ -1,5 +1,7 @@
 package market
 
+import "fmt"
+
 // KDJData 存储KDJ数据点
 type KDJData struct {
 	OpenTime   int64
@@ -96,10 +98,33 @@ func calculateKDJ(klines []Kline, period int, kSmooth int, dSmooth int) []*KDJDa
 	return kdjData
 }
 
+// 转换为字符串
+func getKDJDataString(kdjData []*KDJData, period int) string {
+	var KValue, DValue, JValue []float64
+	// 取尾部数据
+	startIndex := len(kdjData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := kdjData[startIndex:]
+	for _, v := range lastData {
+		KValue = append(KValue, v.KValue)
+		DValue = append(DValue, v.DValue)
+		JValue = append(JValue, v.JValue)
+	}
+
+	// 将字节切片转换为字符串
+	KValueStr := formatFloatSlice(KValue)
+	DValueStr := formatFloatSlice(DValue)
+	JValueStr := formatFloatSlice(JValue)
+
+	return fmt.Sprintf("KValue: %s DValue: %s JValue: %s", KValueStr, DValueStr, JValueStr)
+}
+
 // analyzeKDJSignal 分析KDJ数据，生成交易信号
-func analyzeKDJSignal(kdjData []*KDJData, lookback int) Signal {
+func analyzeKDJSignal(kdjData []*KDJData, lookback int, period string) *Signal {
 	if len(kdjData) < lookback+1 {
-		return Signal{Target: "KDJ", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetKDJ, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := kdjData[len(kdjData)-1]
@@ -110,18 +135,20 @@ func analyzeKDJSignal(kdjData []*KDJData, lookback int) Signal {
 	if prev.KValue <= prev.DValue && current.KValue > current.DValue {
 		// 在超卖区的金叉最可靠
 		if current.KValue < 20 && current.DValue < 20 {
-			return Signal{
-				Target:     "KDJ",
+			return &Signal{
+				Target:     TargetKDJ,
 				SignalType: "strong_bullish_cross",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.9,
 				Message:    "KDJ在超卖区金叉！强烈开多信号",
 			}
 		}
-		return Signal{
-			Target:     "KDJ",
+		return &Signal{
+			Target:     TargetKDJ,
 			SignalType: "bullish_cross",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "KDJ金叉，潜在开多信号",
 		}
@@ -131,18 +158,20 @@ func analyzeKDJSignal(kdjData []*KDJData, lookback int) Signal {
 	if prev.KValue >= prev.DValue && current.KValue < current.DValue {
 		// 在超买区的死叉最可靠
 		if current.KValue > 80 && current.DValue > 80 {
-			return Signal{
-				Target:     "KDJ",
+			return &Signal{
+				Target:     TargetKDJ,
 				SignalType: "strong_bearish_cross",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.9,
 				Message:    "KDJ在超买区死叉！强烈开空信号",
 			}
 		}
-		return Signal{
-			Target:     "KDJ",
+		return &Signal{
+			Target:     TargetKDJ,
 			SignalType: "bearish_cross",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "KDJ死叉，潜在开空信号",
 		}
@@ -150,20 +179,22 @@ func analyzeKDJSignal(kdjData []*KDJData, lookback int) Signal {
 
 	// 信号2: J线极端值
 	if current.JValue < 0 {
-		return Signal{
-			Target:     "KDJ",
+		return &Signal{
+			Target:     TargetKDJ,
 			SignalType: "extreme_oversold",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "J线极度超卖 <0，强烈反弹预期",
 		}
 	}
 
 	if current.JValue > 100 {
-		return Signal{
-			Target:     "KDJ",
+		return &Signal{
+			Target:     TargetKDJ,
 			SignalType: "extreme_overbought",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "J线极度超买 >100，强烈回调预期",
 		}
@@ -171,20 +202,22 @@ func analyzeKDJSignal(kdjData []*KDJData, lookback int) Signal {
 
 	// 信号3: 超买超卖区域
 	if current.KValue < 20 && current.DValue < 20 {
-		return Signal{
-			Target:     "KDJ",
+		return &Signal{
+			Target:     TargetKDJ,
 			SignalType: "oversold_zone",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "KDJ进入超卖区，关注做多机会",
 		}
 	}
 
 	if current.KValue > 80 && current.DValue > 80 {
-		return Signal{
-			Target:     "KDJ",
+		return &Signal{
+			Target:     TargetKDJ,
 			SignalType: "overbought_zone",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "KDJ进入超买区，关注做空机会",
 		}
@@ -195,20 +228,22 @@ func analyzeKDJSignal(kdjData []*KDJData, lookback int) Signal {
 	bearishDivergence := detectKDJBearishDivergence(kdjData, lookback)
 
 	if bullishDivergence {
-		return Signal{
-			Target:     "KDJ",
+		return &Signal{
+			Target:     TargetKDJ,
 			SignalType: "strong_bullish_divergence",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现KDJ底背离！价格创新低但KDJ未创新低，强烈开多信号",
 		}
 	}
 
 	if bearishDivergence {
-		return Signal{
-			Target:     "KDJ",
+		return &Signal{
+			Target:     TargetKDJ,
 			SignalType: "strong_bearish_divergence",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现KDJ顶背离！价格创新高但KDJ未创新高，强烈开空信号",
 		}
@@ -216,26 +251,28 @@ func analyzeKDJSignal(kdjData []*KDJData, lookback int) Signal {
 
 	// 信号5: 趋势强度
 	if current.KValue > current.DValue && current.DValue > current.JValue && current.KValue > 50 {
-		return Signal{
-			Target:     "KDJ",
+		return &Signal{
+			Target:     TargetKDJ,
 			SignalType: "strong_bullish_trend",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "K>D>J且在50上方，强势多头格局",
 		}
 	}
 
 	if current.KValue < current.DValue && current.DValue < current.JValue && current.KValue < 50 {
-		return Signal{
-			Target:     "KDJ",
+		return &Signal{
+			Target:     TargetKDJ,
 			SignalType: "strong_bearish_trend",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "K<D<J且在50下方，强势空头格局",
 		}
 	}
 
-	return Signal{Target: "KDJ", SignalType: "none", Side: "none", Confidence: 0.5, Message: "未发现明确KDJ信号"}
+	return &Signal{Target: TargetKDJ, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确KDJ信号"}
 }
 
 // detectKDJBullishDivergence 检测KDJ底背离
@@ -358,8 +395,7 @@ func findKDJLow(data []*KDJData, lookback int) (float64, int) {
 	return low, index
 }
 
-// 在主函数中调用
-func GetKDJSignal(klines []Kline, period int, kSmooth int, dSmooth int) Signal {
+func GetKDJSignal(klines []Kline, period int, kSmooth int, dSmooth int, tiemPeriod string) *Signal {
 	// 1.	KDJ参数优化：
 	// o	标准参数：9,3,3（平衡敏感度和稳定性）
 	// o	短线交易：6,3,3或9,2,2（更敏感）
@@ -399,7 +435,7 @@ func GetKDJSignal(klines []Kline, period int, kSmooth int, dSmooth int) Signal {
 	kdjData := calculateKDJ(klines, period, kSmooth, dSmooth)
 
 	// 分析KDJ信号
-	signal := analyzeKDJSignal(kdjData, 20)
+	signal := analyzeKDJSignal(kdjData, 20, tiemPeriod)
 
 	return signal
 }

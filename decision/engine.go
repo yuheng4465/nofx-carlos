@@ -131,40 +131,40 @@ func GetFullDecisionWithCustomPrompt(ctx *Context, mcpClient *mcp.Client, custom
 	systemPrompt := buildSystemPromptWithCustom(ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage, customPrompt, overrideBase, templateName)
 	userPrompt := buildUserPrompt(ctx)
 	/////////////////////////////////////////////////////////////////////////
-	// var Decisions = []Decision{}
-	// return &FullDecision{
-	// 	CoTTrace:     "",
-	// 	Decisions:    Decisions,
-	// 	Timestamp:    time.Now(),
-	// 	SystemPrompt: systemPrompt,
-	// 	UserPrompt:   userPrompt,
-	// }, nil
+	var Decisions = []Decision{}
+	return &FullDecision{
+		CoTTrace:     "",
+		Decisions:    Decisions,
+		Timestamp:    time.Now(),
+		SystemPrompt: systemPrompt,
+		UserPrompt:   userPrompt,
+	}, nil
 	////////////////////////////////////////////////////////////////////////
 
 	// 3. 调用AI API（使用 system + user prompt）
-	aiResponse, err := mcpClient.CallWithMessages(systemPrompt, userPrompt)
-	if err != nil {
-		return nil, fmt.Errorf("调用AI API失败: %w", err)
-	}
+	// aiResponse, err := mcpClient.CallWithMessages(systemPrompt, userPrompt)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("调用AI API失败: %w", err)
+	// }
 
-	// 4. 解析AI响应
-	decision, err := parseFullDecisionResponse(aiResponse, ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage, ctx.Account.PositionCount)
+	// // 4. 解析AI响应
+	// decision, err := parseFullDecisionResponse(aiResponse, ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage, ctx.Account.PositionCount)
 
-	// 无论是否有错误，都要保存 SystemPrompt 和 UserPrompt（用于调试和决策未执行后的问题定位）
-	if decision != nil {
-		decision.Timestamp = time.Now()
-		decision.SystemPrompt = systemPrompt // 保存系统prompt
-		decision.UserPrompt = userPrompt     // 保存输入prompt
-	}
+	// // 无论是否有错误，都要保存 SystemPrompt 和 UserPrompt（用于调试和决策未执行后的问题定位）
+	// if decision != nil {
+	// 	decision.Timestamp = time.Now()
+	// 	decision.SystemPrompt = systemPrompt // 保存系统prompt
+	// 	decision.UserPrompt = userPrompt     // 保存输入prompt
+	// }
 
-	if err != nil {
-		return decision, fmt.Errorf("解析AI响应失败: %w", err)
-	}
+	// if err != nil {
+	// 	return decision, fmt.Errorf("解析AI响应失败: %w", err)
+	// }
 
-	decision.Timestamp = time.Now()
-	decision.SystemPrompt = systemPrompt // 保存系统prompt
-	decision.UserPrompt = userPrompt     // 保存输入prompt
-	return decision, nil
+	// decision.Timestamp = time.Now()
+	// decision.SystemPrompt = systemPrompt // 保存系统prompt
+	// decision.UserPrompt = userPrompt     // 保存输入prompt
+	// return decision, nil
 }
 
 // fetchMarketDataForContext 为上下文中的所有币种获取市场数据和OI数据

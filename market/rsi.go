@@ -72,10 +72,29 @@ func calculateRSIData(klines []Kline, period int) []*RSIData {
 	return rsiList
 }
 
+// 转换为字符串
+func getRSIDataString(rsiData []*RSIData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(rsiData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := rsiData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.RSI)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeRSISignal 分析RSI数据，生成交易信号
-func analyzeRSISignal(rsiData []*RSIData, lookback int) Signal {
+func analyzeRSISignal(rsiData []*RSIData, lookback int, period string) *Signal {
 	if len(rsiData) < lookback+1 {
-		return Signal{Target: "RSI", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetRSI, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := rsiData[len(rsiData)-1]
@@ -84,20 +103,22 @@ func analyzeRSISignal(rsiData []*RSIData, lookback int) Signal {
 	// 信号1: 超买超卖线穿越
 	// 从下方上穿30线 (超卖反弹)
 	if prev.RSI < 30 && current.RSI >= 30 {
-		return Signal{
-			Target:     "RSI",
+		return &Signal{
+			Target:     TargetRSI,
 			SignalType: "bullish_oversold",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "RSI从超卖区反弹！潜在开多信号",
 		}
 	}
 	// 从上下穿70线 (超买回落)
 	if prev.RSI > 70 && current.RSI <= 70 {
-		return Signal{
-			Target:     "RSI",
+		return &Signal{
+			Target:     TargetRSI,
 			SignalType: "bearish_overbought",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "RSI从超买区回落！潜在开空信号",
 		}
@@ -107,10 +128,11 @@ func analyzeRSISignal(rsiData []*RSIData, lookback int) Signal {
 	// 在强势区域上穿50
 	if current.RSI > 40 && current.RSI < 80 {
 		if prev.RSI < 50 && current.RSI >= 50 {
-			return Signal{
-				Target:     "RSI",
+			return &Signal{
+				Target:     TargetRSI,
 				SignalType: "bullish_momentum",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "RSI在强势区上穿50，上涨动量增强",
 			}
@@ -120,10 +142,11 @@ func analyzeRSISignal(rsiData []*RSIData, lookback int) Signal {
 	// 在弱势区域下穿50
 	if current.RSI > 20 && current.RSI < 60 {
 		if prev.RSI > 50 && current.RSI <= 50 {
-			return Signal{
-				Target:     "RSI",
+			return &Signal{
+				Target:     TargetRSI,
 				SignalType: "bearish_momentum",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "RSI在弱势区下穿50，下跌动量增强",
 			}
@@ -133,22 +156,23 @@ func analyzeRSISignal(rsiData []*RSIData, lookback int) Signal {
 	// 信号3: 背离检测
 	bullishDivergence := detectBullishDivergence(rsiData, lookback)
 	bearishDivergence := detectBearishDivergence(rsiData, lookback)
-
 	if bullishDivergence {
-		return Signal{
-			Target:     "RSI",
+		return &Signal{
+			Target:     TargetRSI,
 			SignalType: "strong_bullish_divergence",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现RSI底背离！强烈开多信号！",
 		}
 	}
 
 	if bearishDivergence {
-		return Signal{
-			Target:     "RSI",
+		return &Signal{
+			Target:     TargetRSI,
 			SignalType: "strong_bearish_divergence",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现RSI顶背离！强烈开空信号！",
 		}
@@ -156,26 +180,28 @@ func analyzeRSISignal(rsiData []*RSIData, lookback int) Signal {
 
 	// 信号4: RSI水平判断
 	if current.RSI > 70 {
-		return Signal{
-			Target:     "RSI",
+		return &Signal{
+			Target:     TargetRSI,
 			SignalType: "overbought",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.5,
 			Message:    "RSI处于超买区，警惕回调，不宜追多",
 		}
 	}
 
 	if current.RSI < 30 {
-		return Signal{
-			Target:     "RSI",
+		return &Signal{
+			Target:     TargetRSI,
 			SignalType: "oversold",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.5,
 			Message:    "RSI处于超卖区，警惕反弹，不宜追空",
 		}
 	}
 
-	return Signal{Target: "RSI", SignalType: "none", Side: "none", Confidence: 0, Message: "未发现明确信号"}
+	return &Signal{Target: TargetRSI, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确信号"}
 }
 
 // detectBullishDivergence 检测看多背离 (价格新低，RSI更高低点)
@@ -299,7 +325,7 @@ func findRSILow(data []*RSIData, lookback int) (float64, int) {
 }
 
 // 在主函数中调用
-func GetRSISignal(klines []Kline, period int) Signal {
+func GetRSISignal(klines []Kline, period int, timePeriod string) *Signal {
 	// 1.	绝不单独使用RSI：RSI必须与价格行为分析、趋势线、支撑/阻力位以及其他指标（如均线、MACD）结合使用。
 
 	// 2.	适应市场状态：
@@ -323,7 +349,7 @@ func GetRSISignal(klines []Kline, period int) Signal {
 	rsiData := calculateRSIData(klines, period)
 
 	// 分析RSI信号
-	signal := analyzeRSISignal(rsiData, 20)
+	signal := analyzeRSISignal(rsiData, 20, timePeriod)
 
 	return signal
 }

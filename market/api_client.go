@@ -39,6 +39,112 @@ func NewAPIClient() *APIClient {
 	}
 }
 
+// getOpenInterestData 获取OI数据（获取当前未平仓合约数）
+func (c *APIClient) getOpenInterestData(symbol string) (*OIData, error) {
+	api_url := fmt.Sprintf("%s/fapi/v1/openInterest?symbol=%s", baseURL, symbol)
+
+	resp, err := c.client.Get(api_url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		OpenInterest string `json:"openInterest"`
+		Symbol       string `json:"symbol"`
+		Time         int64  `json:"time"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	oi, _ := strconv.ParseFloat(result.OpenInterest, 64)
+
+	return &OIData{
+		Symbol:       result.Symbol,
+		OpenInterest: oi,
+		Timestamp:    result.Time,
+	}, nil
+}
+
+// openInterestHist 获取OI趋势分析（合约持仓量历史）
+func (c *APIClient) getOpenInterestHist(symbol string, period string, limit int) ([]*OIData, error) {
+	api_url := fmt.Sprintf("%s/futures/data/openInterestHist?symbol=%s&period=%s&limit=%d", baseURL, symbol, period, limit)
+
+	resp, err := c.client.Get(api_url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	type InterestData struct {
+		SumOpenInterest string `json:"sumOpenInterest"`
+		Symbol          string `json:"symbol"`
+		Timestamp       int64  `json:"timestamp"`
+	}
+
+	var data []InterestData
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil, err
+	}
+
+	history := make([]*OIData, len(data))
+	for _, item := range data {
+		sumOpenInterest, _ := strconv.ParseFloat(item.SumOpenInterest, 64)
+		history = append(history, &OIData{
+			Symbol:       symbol,
+			OpenInterest: sumOpenInterest,
+			Timestamp:    item.Timestamp,
+		})
+	}
+
+	return history, nil
+}
+
+// getFundingRate 获取资金费率
+func (c *APIClient) getFundingRate(symbol string) (float64, error) {
+	api_url := fmt.Sprintf("%s/fapi/v1/premiumIndex?symbol=%s", baseURL, symbol)
+
+	resp, err := c.client.Get(api_url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	var result struct {
+		Symbol          string `json:"symbol"`
+		MarkPrice       string `json:"markPrice"`
+		IndexPrice      string `json:"indexPrice"`
+		LastFundingRate string `json:"lastFundingRate"`
+		NextFundingTime int64  `json:"nextFundingTime"`
+		InterestRate    string `json:"interestRate"`
+		Time            int64  `json:"time"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, err
+	}
+
+	rate, _ := strconv.ParseFloat(result.LastFundingRate, 64)
+	return rate, nil
+}
+
 func (c *APIClient) GetExchangeInfo() (*ExchangeInfo, error) {
 	url := fmt.Sprintf("%s/fapi/v1/exchangeInfo", baseURL)
 	resp, err := c.client.Get(url)
@@ -62,7 +168,7 @@ func (c *APIClient) GetExchangeInfo() (*ExchangeInfo, error) {
 
 // 获取近期成交
 func (c *APIClient) GetTrades(symbol string, limit int) ([]TradeDetail, error) {
-	url := fmt.Sprintf("%s/fapi/v1/trades", baseURL)
+	url := fmt.Sprintf("%s/fapi/v1/aggTrades", baseURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err

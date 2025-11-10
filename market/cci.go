@@ -1,7 +1,7 @@
 package market
 
 import (
-	"math"
+	"github.com/markcheno/go-talib"
 )
 
 // CCIData 存储CCI数据点
@@ -14,77 +14,54 @@ type CCIData struct {
 	CCI          float64
 }
 
-// CCISignal 存储CCI分析信号
-type CCISignal struct {
-	SignalType string
-	Confidence float64
-	Message    string
-}
-
 // calculateCCI 计算顺势指标
 func calculateCCI(klines []Kline, period int) []*CCIData {
 	var cciData []*CCIData
-	var typicalPrices []float64
-
-	for i, kline := range klines {
-		high := kline.High
-		low := kline.Low
-		close := kline.Close
-
-		// 计算典型价格
-		typicalPrice := (high + low + close) / 3.0
-		typicalPrices = append(typicalPrices, typicalPrice)
-
-		// 计算CCI
-		if i >= period-1 {
-			// 计算移动平均
-			sumTP := 0.0
-			for j := 0; j < period; j++ {
-				sumTP += typicalPrices[i-j]
-			}
-			sma := sumTP / float64(period)
-
-			// 计算平均偏差
-			sumDeviation := 0.0
-			for j := 0; j < period; j++ {
-				deviation := math.Abs(typicalPrices[i-j] - sma)
-				sumDeviation += deviation
-			}
-			meanDeviation := sumDeviation / float64(period)
-
-			// 计算CCI
-			cciValue := 0.0
-			if meanDeviation != 0 {
-				cciValue = (typicalPrice - sma) / (0.015 * meanDeviation)
-			}
-
-			cciData = append(cciData, &CCIData{
-				OpenTime:     kline.OpenTime,
-				ClosePrice:   close,
-				HighPrice:    high,
-				LowPrice:     low,
-				TypicalPrice: typicalPrice,
-				CCI:          cciValue,
-			})
-		} else {
-			// 数据不足时填充空值
-			cciData = append(cciData, &CCIData{
-				OpenTime:     kline.OpenTime,
-				ClosePrice:   close,
-				HighPrice:    high,
-				LowPrice:     low,
-				TypicalPrice: typicalPrice,
-				CCI:          0,
-			})
-		}
+	// 收盘价、最高价、最低价
+	var closes, highs, lows []float64
+	for _, kline := range klines {
+		closes = append(closes, kline.Close)
+		highs = append(highs, kline.High)
+		lows = append(lows, kline.Low)
 	}
+	cci := talib.Cci(highs, lows, closes, period)
+	for i, c := range cci {
+		// 数据不足时填充空值
+		cciData = append(cciData, &CCIData{
+			ClosePrice: closes[i],
+			HighPrice:  highs[i],
+			LowPrice:   lows[i],
+			CCI:        c,
+		})
+	}
+
 	return cciData
 }
 
+// 转换为字符串
+func getCCIDataString(cciData []*CCIData, period int) string {
+	var data []float64
+
+	// 取尾部数据
+	startIndex := len(cciData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := cciData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.CCI)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeCCISignal 分析CCI数据，生成交易信号
-func analyzeCCISignal(cciData []*CCIData, lookback int) Signal {
+func analyzeCCISignal(cciData []*CCIData, lookback int, period string) *Signal {
 	if len(cciData) < lookback+1 {
-		return Signal{Target: "CCI", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetCCI, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := cciData[len(cciData)-1]
@@ -93,10 +70,11 @@ func analyzeCCISignal(cciData []*CCIData, lookback int) Signal {
 	// 信号1: 超买超卖线穿越
 	// 从下方上穿-100线 (超卖反弹)
 	if prev.CCI < -100 && current.CCI >= -100 {
-		return Signal{
-			Target:     "CCI",
+		return &Signal{
+			Target:     TargetCCI,
 			SignalType: "bullish_oversold",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "CCI从超卖区反弹！价格回归需求强烈，开多信号",
 		}
@@ -104,10 +82,11 @@ func analyzeCCISignal(cciData []*CCIData, lookback int) Signal {
 
 	// 从上方下穿+100线 (超买回落)
 	if prev.CCI > 100 && current.CCI <= 100 {
-		return Signal{
-			Target:     "CCI",
+		return &Signal{
+			Target:     TargetCCI,
 			SignalType: "bearish_overbought",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "CCI从超买区回落！价格回调压力巨大，开空信号",
 		}
@@ -116,10 +95,11 @@ func analyzeCCISignal(cciData []*CCIData, lookback int) Signal {
 	// 信号2: 零轴穿越
 	// CCI上穿0轴
 	if prev.CCI <= 0 && current.CCI > 0 {
-		return Signal{
-			Target:     "CCI",
+		return &Signal{
+			Target:     TargetCCI,
 			SignalType: "bullish_zero_cross",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "CCI上穿零轴！市场转强，顺势开多",
 		}
@@ -127,10 +107,11 @@ func analyzeCCISignal(cciData []*CCIData, lookback int) Signal {
 
 	// CCI下穿0轴
 	if prev.CCI >= 0 && current.CCI < 0 {
-		return Signal{
-			Target:     "CCI",
+		return &Signal{
+			Target:     TargetCCI,
 			SignalType: "bearish_zero_cross",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "CCI下穿零轴！市场转弱，顺势开空",
 		}
@@ -138,20 +119,22 @@ func analyzeCCISignal(cciData []*CCIData, lookback int) Signal {
 
 	// 信号3: 极端值预警
 	if current.CCI > 200 {
-		return Signal{
-			Target:     "CCI",
+		return &Signal{
+			Target:     TargetCCI,
 			SignalType: "extreme_overbought",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "CCI极度超买 >200，强烈回调预警",
 		}
 	}
 
 	if current.CCI < -200 {
-		return Signal{
-			Target:     "CCI",
+		return &Signal{
+			Target:     TargetCCI,
 			SignalType: "extreme_oversold",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "CCI极度超卖 <-200，强烈反弹预警",
 		}
@@ -166,19 +149,21 @@ func analyzeCCISignal(cciData []*CCIData, lookback int) Signal {
 		}
 		trend, _ := LinearRegressionAnalysis(cciList)
 		if trend > 0.3 && current.CCI > 0 {
-			return Signal{
-				Target:     "CCI",
+			return &Signal{
+				Target:     TargetCCI,
 				SignalType: "bullish_trend",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.7,
 				Message:    "CCI保持上升趋势且在零轴上方，多头强势",
 			}
 		}
 		if trend < -0.3 && current.CCI < 0 {
-			return Signal{
-				Target:     "CCI",
+			return &Signal{
+				Target:     TargetCCI,
 				SignalType: "bearish_trend",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.7,
 				Message:    "CCI保持下降趋势且在零轴下方，空头强势",
 			}
@@ -190,26 +175,28 @@ func analyzeCCISignal(cciData []*CCIData, lookback int) Signal {
 	bearishDivergence := detectCCIBearishDivergence(cciData, lookback)
 
 	if bullishDivergence {
-		return Signal{
-			Target:     "CCI",
+		return &Signal{
+			Target:     TargetCCI,
 			SignalType: "strong_bullish_divergence",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现CCI底背离！价格创新低但CCI未创新低，强烈开多信号",
 		}
 	}
 
 	if bearishDivergence {
-		return Signal{
-			Target:     "CCI",
+		return &Signal{
+			Target:     TargetCCI,
 			SignalType: "strong_bearish_divergence",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现CCI顶背离！价格创新高但CCI未创新高，强烈开空信号",
 		}
 	}
 
-	return Signal{Target: "CCI", SignalType: "none", Side: "none", Confidence: 0.5, Message: "未发现明确CCI信号"}
+	return &Signal{Target: TargetCCI, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确CCI信号"}
 }
 
 // detectCCIBullishDivergence 检测CCI底背离
@@ -332,7 +319,7 @@ func findCCILow(data []*CCIData, lookback int) (float64, int) {
 	return low, index
 }
 
-func GetCCISignal(klines []Kline, peroid int) Signal {
+func getCCISignal(klines []Kline, period int, timePeriod string) *Signal {
 	// 1.	CCI参数优化：
 	// o	标准参数：20周期（最常用）
 	// o	短线交易：14周期（更敏感）
@@ -372,10 +359,10 @@ func GetCCISignal(klines []Kline, peroid int) Signal {
 
 	// CCI适合4小时或日线分析
 	// 计算CCI，通常使用20周期
-	cciData := calculateCCI(klines, peroid)
+	cciData := calculateCCI(klines, period)
 
 	// 分析CCI信号
-	signal := analyzeCCISignal(cciData, 20)
+	signal := analyzeCCISignal(cciData, 20, timePeriod)
 
 	return signal
 }

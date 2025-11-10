@@ -1,6 +1,7 @@
 package market
 
 import (
+	"fmt"
 	"math"
 )
 
@@ -16,13 +17,6 @@ type BollingerBandData struct {
 	LowerBand  float64 // 下轨
 	BandWidth  float64 // 带宽
 	PercentB   float64 // %b指标，表示价格在布林带中的位置
-}
-
-// BollingerSignal 存储布林带分析信号
-type BollingerSignal struct {
-	SignalType string
-	Confidence float64
-	Message    string
 }
 
 // calculateBollingerBands 计算布林带
@@ -72,10 +66,39 @@ func calculateBollingerBands(klines []Kline, period int, multiplier float64) []*
 	return bbData
 }
 
+// 转换为字符串
+func getBOLLDataString(bbData []*BollingerBandData, period int) string {
+	var middleBand, upperBand, lowerBand []float64
+	// 取尾部数据
+	startIndex := len(bbData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := bbData[startIndex:]
+	for _, v := range lastData {
+		middleBand = append(middleBand, v.MiddleBand)
+		upperBand = append(upperBand, v.UpperBand)
+		lowerBand = append(lowerBand, v.LowerBand)
+	}
+
+	// 将字节切片转换为字符串
+	middleBandStr := formatFloatSlice(middleBand)
+	upperBandStr := formatFloatSlice(upperBand)
+	lowerBandStr := formatFloatSlice(lowerBand)
+
+	return fmt.Sprintf("middleBand: %s , upperBand: %s , lowerBand: %s", middleBandStr, upperBandStr, lowerBandStr)
+}
+
+// 计算布林带带宽
+func calculateBollingerWidth(bbData []*BollingerBandData) float64 {
+	current := bbData[len(bbData)-1]
+	return (current.UpperBand - current.LowerBand) / current.MiddleBand * 100
+}
+
 // analyzeBollingerSignal 分析布林带数据，生成交易信号
-func analyzeBollingerSignal(bbData []*BollingerBandData, lookback int) Signal {
+func analyzeBollingerSignal(bbData []*BollingerBandData, lookback int, period string) *Signal {
 	if len(bbData) < lookback+1 {
-		return Signal{Target: "BOLL", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetBOLL, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := bbData[len(bbData)-1]
@@ -95,18 +118,20 @@ func analyzeBollingerSignal(bbData []*BollingerBandData, lookback int) Signal {
 	// 从上轨下方突破到上轨上方
 	if prev.ClosePrice <= prev.UpperBand && current.ClosePrice > current.UpperBand {
 		if isSqueeze {
-			return Signal{
-				Target:     "BOLL",
+			return &Signal{
+				Target:     TargetBOLL,
 				SignalType: "strong_bullish_breakout",
-				Side:       "buy",
+				Period:     period,
+				Side:       SideBuy,
 				Confidence: 0.8,
 				Message:    "布林带收缩后向上突破上轨！强烈开多信号！",
 			}
 		}
-		return Signal{
-			Target:     "BOLL",
+		return &Signal{
+			Target:     TargetBOLL,
 			SignalType: "bullish_breakout",
-			Side:       "buy",
+			Period:     period,
+			Side:       SideBuy,
 			Confidence: 0.6,
 			Message:    "价格突破上轨，潜在开多信号",
 		}
@@ -115,18 +140,20 @@ func analyzeBollingerSignal(bbData []*BollingerBandData, lookback int) Signal {
 	// 从下轨上方跌破到下轨下方
 	if prev.ClosePrice >= prev.LowerBand && current.ClosePrice < current.LowerBand {
 		if isSqueeze {
-			return Signal{
-				Target:     "BOLL",
+			return &Signal{
+				Target:     TargetBOLL,
 				SignalType: "strong_bearish_breakout",
-				Side:       "sell",
+				Period:     period,
+				Side:       SideSell,
 				Confidence: 0.8,
 				Message:    "布林带收缩后向下跌破下轨！强烈开空信号！",
 			}
 		}
-		return Signal{
-			Target:     "BOLL",
+		return &Signal{
+			Target:     TargetBOLL,
 			SignalType: "bearish_breakout",
-			Side:       "sell",
+			Period:     period,
+			Side:       SideSell,
 			Confidence: 0.6,
 			Message:    "价格跌破下轨，潜在开空信号",
 		}
@@ -135,10 +162,11 @@ func analyzeBollingerSignal(bbData []*BollingerBandData, lookback int) Signal {
 	// 信号3: 反转信号 (从下轨反弹/从上轨回落)
 	// 如果前一根K线接触或跌破下轨，当前K线收高，视为反弹信号
 	if prev.ClosePrice <= prev.LowerBand && current.ClosePrice > prev.LowerBand {
-		return Signal{
-			Target:     "BOLL",
+		return &Signal{
+			Target:     TargetBOLL,
 			SignalType: "bullish_reversal",
-			Side:       "buy",
+			Period:     period,
+			Side:       SideBuy,
 			Confidence: 0.7,
 			Message:    "价格从下轨反弹，潜在开多信号",
 		}
@@ -146,10 +174,11 @@ func analyzeBollingerSignal(bbData []*BollingerBandData, lookback int) Signal {
 
 	// 如果前一根K线接触或突破上轨，当前K线收低，视为回落信号
 	if prev.ClosePrice >= prev.UpperBand && current.ClosePrice < prev.UpperBand {
-		return Signal{
-			Target:     "BOLL",
+		return &Signal{
+			Target:     TargetBOLL,
 			SignalType: "bearish_reversal",
-			Side:       "sell",
+			Period:     period,
+			Side:       SideSell,
 			Confidence: 0.7,
 			Message:    "价格从上轨回落，潜在开空信号",
 		}
@@ -159,43 +188,47 @@ func analyzeBollingerSignal(bbData []*BollingerBandData, lookback int) Signal {
 	if current.ClosePrice > current.MiddleBand {
 		// 在上升趋势中，如果价格回调接近中轨
 		if current.ClosePrice < current.MiddleBand*1.01 { // 价格在中轨附近1%范围内
-			return Signal{
-				Target:     "BOLL",
+			return &Signal{
+				Target:     TargetBOLL,
 				SignalType: "trend_bullish_pullback",
-				Side:       "buy",
+				Period:     period,
+				Side:       SideBuy,
 				Confidence: 0.6,
 				Message:    "价格在上升趋势中回调至中轨支撑，潜在开多机会",
 			}
 		}
-		return Signal{
-			Target:     "BOLL",
+		return &Signal{
+			Target:     TargetBOLL,
 			SignalType: "bullish_trend",
-			Side:       "buy",
+			Period:     period,
+			Side:       SideBuy,
 			Confidence: 0.5,
 			Message:    "价格在中轨上方，处于上升趋势",
 		}
 	} else {
 		// 在下降趋势中，如果价格反弹接近中轨
 		if current.ClosePrice > current.MiddleBand*0.99 { // 价格在中轨附近1%范围内
-			return Signal{
-				Target:     "BOLL",
+			return &Signal{
+				Target:     TargetBOLL,
 				SignalType: "trend_bearish_pullback",
-				Side:       "sell",
+				Period:     period,
+				Side:       SideSell,
 				Confidence: 0.6,
 				Message:    "价格在下降趋势中反弹至中轨阻力，潜在开空机会",
 			}
 		}
-		return Signal{
-			Target:     "BOLL",
+		return &Signal{
+			Target:     TargetBOLL,
 			SignalType: "bearish_trend",
-			Side:       "sell",
+			Period:     period,
+			Side:       SideSell,
 			Confidence: 0.5,
 			Message:    "价格在中轨下方，处于下降趋势",
 		}
 	}
 }
 
-func GetBollingerSignal(klines []Kline, period int) Signal {
+func getBollingerSignal(klines []Kline, period int, timePeriod string) *Signal {
 	// 1、绝不单独使用布林带：布林带必须与其他指标结合使用以过滤假信号：
 	// RSI/MACD：用于确认背离。例如，价格突破上轨的同时RSI出现顶背离，则突破失败的概率大增。
 	// 成交量：收缩后的突破必须放量，否则可能是假突破。反弹/回落时缩量更佳。
@@ -218,7 +251,7 @@ func GetBollingerSignal(klines []Kline, period int) Signal {
 	bbData := calculateBollingerBands(klines, period, 2.0)
 
 	// 分析信号
-	signal := analyzeBollingerSignal(bbData, 10)
+	signal := analyzeBollingerSignal(bbData, 10, timePeriod)
 
 	return signal
 }

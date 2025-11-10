@@ -11,13 +11,6 @@ type StochRSIData struct {
 	FastD          float64
 }
 
-// StochRSISignal 存储StochRSI分析信号
-type StochRSISignal struct {
-	SignalType string
-	Confidence float64
-	Message    string
-}
-
 // calculateRSI 计算RSI指标
 func calculateRSIList(prices []float64, period int) []float64 {
 	rsi := make([]float64, len(prices))
@@ -60,92 +53,104 @@ func calculateRSIList(prices []float64, period int) []float64 {
 
 // calculateStochRSI 计算随机相对强弱指数
 func calculateStochRSI(klines []Kline, rsiPeriod int, stochPeriod int, smoothK int, smoothD int) []*StochRSIData {
-	var stochRSIData []*StochRSIData
-	var closes []float64
-
-	// 提取收盘价
-	for _, kline := range klines {
-		closePrice := kline.Close
-		closes = append(closes, closePrice)
+	if len(klines) == 0 {
+		return nil
 	}
 
-	// 计算RSI
+	// 准备数据
+	closes := make([]float64, len(klines))
+	for i, kline := range klines {
+		closes[i] = kline.Close
+	}
+
 	rsiValues := calculateRSIList(closes, rsiPeriod)
+	stochRSIData := make([]*StochRSIData, len(klines))
 
-	for i := range klines {
-		closePrice := klines[i].Close
-
-		if i < rsiPeriod+stochPeriod-1 {
-			// 数据不足时填充空值
-			stochRSIData = append(stochRSIData, &StochRSIData{
-				OpenTime:   klines[i].OpenTime,
-				ClosePrice: closePrice,
-				RSI:        0,
-				StochRSI:   0,
-				FastK:      0,
-				FastD:      0,
-			})
-			continue
+	for i := 0; i < len(klines); i++ {
+		data := &StochRSIData{
+			OpenTime:   klines[i].OpenTime,
+			ClosePrice: klines[i].Close,
+			RSI:        rsiValues[i],
 		}
 
-		// 计算StochRSI
-		lowestRSI := rsiValues[i]
-		highestRSI := rsiValues[i]
+		// StochRSI计算
+		if i >= rsiPeriod+stochPeriod-1 {
+			start := i - stochPeriod + 1
+			end := i
 
-		for j := 0; j < stochPeriod; j++ {
-			rsiVal := rsiValues[i-j]
-			if rsiVal < lowestRSI {
-				lowestRSI = rsiVal
+			lowest := rsiValues[start]
+			highest := rsiValues[start]
+			for j := start; j <= end; j++ {
+				if rsiValues[j] < lowest {
+					lowest = rsiValues[j]
+				}
+				if rsiValues[j] > highest {
+					highest = rsiValues[j]
+				}
 			}
-			if rsiVal > highestRSI {
-				highestRSI = rsiVal
+
+			if highest != lowest {
+				data.StochRSI = (rsiValues[i] - lowest) / (highest - lowest) * 100
 			}
+			data.FastK = data.StochRSI
 		}
 
-		stochRSI := 0.0
-		if highestRSI != lowestRSI {
-			stochRSI = (rsiValues[i] - lowestRSI) / (highestRSI - lowestRSI) * 100
-		}
-
-		// 计算FastK和FastD
-		fastK := stochRSI
-		fastD := 0.0
-
-		if i >= rsiPeriod+stochPeriod+smoothK-2 {
-			// 计算FastK的平滑
-			sumK := 0.0
-			for j := 0; j < smoothK; j++ {
-				sumK += stochRSIData[i-j].StochRSI
-			}
-			fastK = sumK / float64(smoothK)
-		}
-
-		if i >= rsiPeriod+stochPeriod+smoothK+smoothD-3 {
-			// 计算FastD的平滑
-			sumD := 0.0
-			for j := 0; j < smoothD; j++ {
-				sumD += stochRSIData[i-j].FastK
-			}
-			fastD = sumD / float64(smoothD)
-		}
-
-		stochRSIData = append(stochRSIData, &StochRSIData{
-			OpenTime:       klines[i].OpenTime,
-			ClosePrice:     closePrice,
-			RSI:            rsiValues[i],
-			StochRSI:       stochRSI,
-			StochRSISignal: fastD,
-			FastK:          fastK,
-			FastD:          fastD,
-		})
+		stochRSIData[i] = data
 	}
+
+	// FastK平滑
+	for i := smoothK - 1; i < len(stochRSIData); i++ {
+		if stochRSIData[i] != nil && stochRSIData[i].StochRSI != 0 {
+			sum := 0.0
+			for j := 0; j < smoothK; j++ {
+				if stochRSIData[i-j] != nil {
+					sum += stochRSIData[i-j].StochRSI
+				}
+			}
+			stochRSIData[i].FastK = sum / float64(smoothK)
+		}
+	}
+
+	// FastD平滑
+	for i := smoothD - 1; i < len(stochRSIData); i++ {
+		if stochRSIData[i] != nil && stochRSIData[i].FastK != 0 {
+			sum := 0.0
+			for j := 0; j < smoothD; j++ {
+				if stochRSIData[i-j] != nil {
+					sum += stochRSIData[i-j].FastK
+				}
+			}
+			stochRSIData[i].FastD = sum / float64(smoothD)
+			stochRSIData[i].StochRSISignal = stochRSIData[i].FastD
+		}
+	}
+
 	return stochRSIData
 }
 
+// 转换为字符串
+func getStochRSIDataString(stochRSIData []*StochRSIData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(stochRSIData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := stochRSIData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.StochRSI)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeStochRSISignal 分析StochRSI数据，生成交易信号
-func analyzeStochRSISignal(stochRSIData []*StochRSIData, lookback int) Signal {
+func analyzeStochRSISignal(stochRSIData []*StochRSIData, lookback int, period string) *Signal {
 	if len(stochRSIData) < lookback+1 {
-		return Signal{Target: "StochRSI", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetStochRSI, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := stochRSIData[len(stochRSIData)-1]
@@ -156,18 +161,20 @@ func analyzeStochRSISignal(stochRSIData []*StochRSIData, lookback int) Signal {
 	if prev.FastK <= prev.FastD && current.FastK > current.FastD {
 		// 在超卖区的金叉最可靠
 		if current.FastK < 20 && current.FastD < 20 {
-			return Signal{
-				Target:     "StochRSI",
+			return &Signal{
+				Target:     TargetStochRSI,
 				SignalType: "strong_bullish_cross",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.9,
 				Message:    "StochRSI在超卖区金叉！强烈开多信号",
 			}
 		}
-		return Signal{
-			Target:     "StochRSI",
+		return &Signal{
+			Target:     TargetStochRSI,
 			SignalType: "bullish_cross",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "StochRSI金叉，潜在开多信号",
 		}
@@ -177,18 +184,20 @@ func analyzeStochRSISignal(stochRSIData []*StochRSIData, lookback int) Signal {
 	if prev.FastK >= prev.FastD && current.FastK < current.FastD {
 		// 在超买区的死叉最可靠
 		if current.FastK > 80 && current.FastD > 80 {
-			return Signal{
-				Target:     "StochRSI",
+			return &Signal{
+				Target:     TargetStochRSI,
 				SignalType: "strong_bearish_cross",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.9,
 				Message:    "StochRSI在超买区死叉！强烈开空信号",
 			}
 		}
-		return Signal{
-			Target:     "StochRSI",
+		return &Signal{
+			Target:     TargetStochRSI,
 			SignalType: "bearish_cross",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "StochRSI死叉，潜在开空信号",
 		}
@@ -196,40 +205,44 @@ func analyzeStochRSISignal(stochRSIData []*StochRSIData, lookback int) Signal {
 
 	// 信号2: 超买超卖区域
 	if current.FastK < 10 && current.FastD < 10 {
-		return Signal{
-			Target:     "StochRSI",
+		return &Signal{
+			Target:     TargetStochRSI,
 			SignalType: "extreme_oversold",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "StochRSI极度超卖 <10，强烈反弹预期",
 		}
 	}
 
 	if current.FastK > 90 && current.FastD > 90 {
-		return Signal{
-			Target:     "StochRSI",
+		return &Signal{
+			Target:     TargetStochRSI,
 			SignalType: "extreme_overbought",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "StochRSI极度超买 >90，强烈回调预期",
 		}
 	}
 
 	if current.FastK < 20 && current.FastD < 20 {
-		return Signal{
-			Target:     "StochRSI",
+		return &Signal{
+			Target:     TargetStochRSI,
 			SignalType: "oversold_zone",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "StochRSI进入超卖区，关注做多机会",
 		}
 	}
 
 	if current.FastK > 80 && current.FastD > 80 {
-		return Signal{
-			Target:     "StochRSI",
+		return &Signal{
+			Target:     TargetStochRSI,
 			SignalType: "overbought_zone",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "StochRSI进入超买区，关注做空机会",
 		}
@@ -240,20 +253,22 @@ func analyzeStochRSISignal(stochRSIData []*StochRSIData, lookback int) Signal {
 	bearishDivergence := detectStochRSIBearishDivergence(stochRSIData, lookback)
 
 	if bullishDivergence {
-		return Signal{
-			Target:     "StochRSI",
+		return &Signal{
+			Target:     TargetStochRSI,
 			SignalType: "strong_bullish_divergence",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现StochRSI底背离！价格创新低但动量未创新低，强烈开多信号",
 		}
 	}
 
 	if bearishDivergence {
-		return Signal{
-			Target:     "StochRSI",
+		return &Signal{
+			Target:     TargetStochRSI,
 			SignalType: "strong_bearish_divergence",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现StochRSI顶背离！价格创新高但动量未创新高，强烈开空信号",
 		}
@@ -261,26 +276,28 @@ func analyzeStochRSISignal(stochRSIData []*StochRSIData, lookback int) Signal {
 
 	// 信号4: 趋势强度
 	if current.FastK > 50 && current.FastD > 50 && current.FastK > current.FastD {
-		return Signal{
-			Target:     "StochRSI",
+		return &Signal{
+			Target:     TargetStochRSI,
 			SignalType: "bullish_momentum",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "StochRSI在强势区且金叉，多头动量良好",
 		}
 	}
 
 	if current.FastK < 50 && current.FastD < 50 && current.FastK < current.FastD {
-		return Signal{
-			Target:     "StochRSI",
+		return &Signal{
+			Target:     TargetStochRSI,
 			SignalType: "bearish_momentum",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "StochRSI在弱势区且死叉，空头动量良好",
 		}
 	}
 
-	return Signal{Target: "StochRSI", SignalType: "none", Side: "none", Confidence: 0.5, Message: "未发现明确StochRSI信号"}
+	return &Signal{Target: TargetStochRSI, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确StochRSI信号"}
 }
 
 // detectStochRSIBullishDivergence 检测StochRSI底背离
@@ -403,7 +420,7 @@ func findStochRSILow(data []*StochRSIData, lookback int) (float64, int) {
 	return low, index
 }
 
-func GetStochRSISignal(klines []Kline) Signal {
+func GetStochRSISignal(klines []Kline, period string) *Signal {
 	// 1.	StochRSI参数优化：
 	// o	标准参数：RSI(14), Stoch(14), K(3), D(3)
 	// o	敏感参数：RSI(9), Stoch(9), K(2), D(2) - 更适合短线
@@ -444,7 +461,7 @@ func GetStochRSISignal(klines []Kline) Signal {
 	stochRSIData := calculateStochRSI(klines, 14, 14, 3, 3)
 
 	// 分析StochRSI信号
-	signal := analyzeStochRSISignal(stochRSIData, 20)
+	signal := analyzeStochRSISignal(stochRSIData, 20, period)
 
 	return signal
 }

@@ -1,5 +1,7 @@
 package market
 
+import "math"
+
 // WRData 存储WR数据点
 type WRData struct {
 	OpenTime   int64
@@ -9,17 +11,12 @@ type WRData struct {
 	WR         float64
 }
 
-// WRSignal 存储WR分析信号
-type WRSignal struct {
-	SignalType string
-	Confidence float64
-	Message    string
-}
-
 // calculateWR 计算威廉姆斯指标
 func calculateWR(klines []Kline, period int) []*WRData {
 	var wrData []*WRData
 
+	// 定义极小值避免除零
+	epsilon := math.SmallestNonzeroFloat64
 	for i := range klines {
 		if i < period-1 {
 			// 数据不足时填充空值
@@ -36,20 +33,16 @@ func calculateWR(klines []Kline, period int) []*WRData {
 		periodHigh := 0.0
 		periodLow := 0.0
 
-		for j := 0; j < period; j++ {
+		// 回溯 period 个K线（包括当前）
+		for j := 1; j < period; j++ { // j=0 已初始化，从 j=1 开始
 			high := klines[i-j].High
 			low := klines[i-j].Low
 
-			if j == 0 {
+			if high > periodHigh {
 				periodHigh = high
+			}
+			if low < periodLow {
 				periodLow = low
-			} else {
-				if high > periodHigh {
-					periodHigh = high
-				}
-				if low < periodLow {
-					periodLow = low
-				}
 			}
 		}
 
@@ -57,10 +50,10 @@ func calculateWR(klines []Kline, period int) []*WRData {
 
 		// 计算WR
 		wrValue := 0.0
-		if periodHigh != periodLow {
+		denominator := periodHigh - periodLow
+		if denominator > epsilon {
 			wrValue = (periodHigh - closePrice) / (periodHigh - periodLow) * (-100)
 		}
-
 		wrData = append(wrData, &WRData{
 			OpenTime:   klines[i].OpenTime,
 			ClosePrice: closePrice,
@@ -72,10 +65,28 @@ func calculateWR(klines []Kline, period int) []*WRData {
 	return wrData
 }
 
+// 转换为字符串
+func getWRDataString(wrData []*WRData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(wrData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := wrData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.WR)
+	}
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeWRSignal 分析WR数据，生成交易信号
-func analyzeWRSignal(wrData []*WRData, lookback int) Signal {
+func analyzeWRSignal(wrData []*WRData, lookback int, period string) *Signal {
 	if len(wrData) < lookback+1 {
-		return Signal{Target: "WR", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetWR, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := wrData[len(wrData)-1]
@@ -84,10 +95,11 @@ func analyzeWRSignal(wrData []*WRData, lookback int) Signal {
 	// 信号1: 超买超卖线穿越
 	// 从超卖区上穿-80线 (反弹信号)
 	if prev.WR < -80 && current.WR >= -80 {
-		return Signal{
-			Target:     "WR",
+		return &Signal{
+			Target:     TargetWR,
 			SignalType: "bullish_oversold",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "WR从超卖区反弹！价格回归需求强烈，开多信号",
 		}
@@ -95,10 +107,11 @@ func analyzeWRSignal(wrData []*WRData, lookback int) Signal {
 
 	// 从超买区下穿-20线 (回落信号)
 	if prev.WR > -20 && current.WR <= -20 {
-		return Signal{
-			Target:     "WR",
+		return &Signal{
+			Target:     TargetWR,
 			SignalType: "bearish_overbought",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "WR从超买区回落！价格回调压力巨大，开空信号",
 		}
@@ -107,10 +120,11 @@ func analyzeWRSignal(wrData []*WRData, lookback int) Signal {
 	// 信号2: 中轴线穿越
 	// WR上穿-50线
 	if prev.WR <= -50 && current.WR > -50 {
-		return Signal{
-			Target:     "WR",
+		return &Signal{
+			Target:     TargetWR,
 			SignalType: "bullish_momentum",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "WR上穿中轴线-50！市场转强，顺势开多",
 		}
@@ -118,10 +132,11 @@ func analyzeWRSignal(wrData []*WRData, lookback int) Signal {
 
 	// WR下穿-50线
 	if prev.WR >= -50 && current.WR < -50 {
-		return Signal{
-			Target:     "WR",
+		return &Signal{
+			Target:     TargetWR,
 			SignalType: "bearish_momentum",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "WR下穿中轴线-50！市场转弱，顺势开空",
 		}
@@ -129,20 +144,22 @@ func analyzeWRSignal(wrData []*WRData, lookback int) Signal {
 
 	// 信号3: 极端值预警
 	if current.WR > -10 {
-		return Signal{
-			Target:     "WR",
+		return &Signal{
+			Target:     TargetWR,
 			SignalType: "extreme_overbought",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "WR极度超买 >-10，强烈回调预警",
 		}
 	}
 
 	if current.WR < -90 {
-		return Signal{
-			Target:     "WR",
+		return &Signal{
+			Target:     TargetWR,
 			SignalType: "extreme_oversold",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "WR极度超卖 <-90，强烈反弹预警",
 		}
@@ -156,20 +173,22 @@ func analyzeWRSignal(wrData []*WRData, lookback int) Signal {
 	}
 	slope, _ := LinearRegressionAnalysis(wrList)
 	if slope < 0 && current.WR > prev.WR {
-		return Signal{
-			Target:     "WR",
+		return &Signal{
+			Target:     TargetWR,
 			SignalType: "bullish_bias",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "WR在强势区域，多头占优",
 		}
 	}
 	// WR在超卖区跌破自身上升趋势线（做多）
 	if slope > 0 && current.WR < prev.WR {
-		return Signal{
-			Target:     "WR",
+		return &Signal{
+			Target:     TargetWR,
 			SignalType: "bearish_bias",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "WR在弱势区域，空头占优",
 		}
@@ -178,10 +197,11 @@ func analyzeWRSignal(wrData []*WRData, lookback int) Signal {
 	// 信号5: 背离检测
 	bullishDivergence := detectWRBullishDivergence(wrData, lookback)
 	if bullishDivergence {
-		return Signal{
-			Target:     "WR",
+		return &Signal{
+			Target:     TargetWR,
 			SignalType: "strong_bullish_divergence",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现WR底背离！价格创新低但WR未创新低，强烈开多信号",
 		}
@@ -189,16 +209,17 @@ func analyzeWRSignal(wrData []*WRData, lookback int) Signal {
 
 	bearishDivergence := detectWRBearishDivergence(wrData, lookback)
 	if bearishDivergence {
-		return Signal{
-			Target:     "WR",
+		return &Signal{
+			Target:     TargetWR,
 			SignalType: "strong_bearish_divergence",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现WR顶背离！价格创新高但WR未创新高，强烈开空信号",
 		}
 	}
 
-	return Signal{Target: "WR", SignalType: "none", Side: "none", Confidence: 0.5, Message: "未发现明确WR信号"}
+	return &Signal{Target: TargetWR, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确WR信号"}
 }
 
 // detectWRBullishDivergence 检测WR底背离
@@ -321,7 +342,7 @@ func findWRHigh(data []*WRData, lookback int) (float64, int) {
 	return high, index
 }
 
-func GetWRSignal(klines []Kline) Signal {
+func GetWRSignal(klines []Kline, period int, timePeriod string) *Signal {
 	// 1.	WR参数优化：
 	// o	标准参数：14周期（最常用）
 	// o	短线交易：7-10周期（更敏感）
@@ -361,10 +382,10 @@ func GetWRSignal(klines []Kline) Signal {
 
 	// WR适合4小时或日线分析
 	// 计算WR，通常使用14周期
-	wrData := calculateWR(klines, 14)
+	wrData := calculateWR(klines, period)
 
 	// 分析WR信号
-	signal := analyzeWRSignal(wrData, 20)
+	signal := analyzeWRSignal(wrData, 20, timePeriod)
 
 	return signal
 }

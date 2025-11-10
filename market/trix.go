@@ -89,10 +89,28 @@ func calculateTRIX(klines []Kline, period int) []*TRIXData {
 	return trixData
 }
 
+// 转换为字符串
+func getTRIXDataString(trixData []*TRIXData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(trixData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := trixData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.TRIX)
+	}
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeTRIXSignal 分析TRIX数据，生成交易信号
-func analyzeTRIXSignal(trixData []*TRIXData, lookback int) Signal {
+func analyzeTRIXSignal(trixData []*TRIXData, lookback int, period string) *Signal {
 	if len(trixData) < lookback+1 {
-		return Signal{Target: "TRIX", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetTRIX, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := trixData[len(trixData)-1]
@@ -101,10 +119,11 @@ func analyzeTRIXSignal(trixData []*TRIXData, lookback int) Signal {
 	// 信号1: 零轴穿越
 	// TRIX上穿零轴
 	if prev.TRIX <= 0 && current.TRIX > 0 {
-		return Signal{
-			Target:     "TRIX",
+		return &Signal{
+			Target:     TargetTRIX,
 			SignalType: "bullish_zero_cross",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "TRIX上穿零轴！多头动量确立，强烈开多信号",
 		}
@@ -112,10 +131,11 @@ func analyzeTRIXSignal(trixData []*TRIXData, lookback int) Signal {
 
 	// TRIX下穿零轴
 	if prev.TRIX >= 0 && current.TRIX < 0 {
-		return Signal{
-			Target:     "TRIX",
+		return &Signal{
+			Target:     TargetTRIX,
 			SignalType: "bearish_zero_cross",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "TRIX下穿零轴！空头动量确立，强烈开空信号",
 		}
@@ -125,18 +145,20 @@ func analyzeTRIXSignal(trixData []*TRIXData, lookback int) Signal {
 	// TRIX金叉
 	if prev.TRIX <= prev.TRIXSignal && current.TRIX > current.TRIXSignal {
 		if current.TRIX > 0 {
-			return Signal{
-				Target:     "TRIX",
+			return &Signal{
+				Target:     TargetTRIX,
 				SignalType: "bullish_golden_cross",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.8,
 				Message:    "TRIX在零轴上金叉！上涨动量加速",
 			}
 		} else {
-			return Signal{
-				Target:     "TRIX",
+			return &Signal{
+				Target:     TargetTRIX,
 				SignalType: "potential_bullish_cross",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "TRIX在零轴下金叉，可能反弹但需谨慎",
 			}
@@ -146,18 +168,20 @@ func analyzeTRIXSignal(trixData []*TRIXData, lookback int) Signal {
 	// TRIX死叉
 	if prev.TRIX >= prev.TRIXSignal && current.TRIX < current.TRIXSignal {
 		if current.TRIX < 0 {
-			return Signal{
-				Target:     "TRIX",
+			return &Signal{
+				Target:     TargetTRIX,
 				SignalType: "bearish_dead_cross",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.8,
 				Message:    "TRIX在零轴下死叉！下跌动量加速",
 			}
 		} else {
-			return Signal{
-				Target:     "TRIX",
+			return &Signal{
+				Target:     TargetTRIX,
 				SignalType: "potential_bearish_cross",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "TRIX在零轴上死叉，可能回调但需谨慎",
 			}
@@ -166,20 +190,22 @@ func analyzeTRIXSignal(trixData []*TRIXData, lookback int) Signal {
 
 	// 信号3: 柱状图动量
 	if current.Histogram > 0 && current.Histogram > prev.Histogram {
-		return Signal{
-			Target:     "TRIX",
+		return &Signal{
+			Target:     TargetTRIX,
 			SignalType: "bullish_momentum",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "TRIX柱状线向上放大，上涨动量增强",
 		}
 	}
 
 	if current.Histogram < 0 && current.Histogram < prev.Histogram {
-		return Signal{
-			Target:     "TRIX",
+		return &Signal{
+			Target:     TargetTRIX,
 			SignalType: "bearish_momentum",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "TRIX柱状线向下放大，下跌动量增强",
 		}
@@ -190,26 +216,28 @@ func analyzeTRIXSignal(trixData []*TRIXData, lookback int) Signal {
 	bearishDivergence := detectTRIXBearishDivergence(trixData, lookback)
 
 	if bullishDivergence {
-		return Signal{
-			Target:     "TRIX",
+		return &Signal{
+			Target:     TargetTRIX,
 			SignalType: "strong_bullish_divergence",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现TRIX底背离！强烈开多信号",
 		}
 	}
 
 	if bearishDivergence {
-		return Signal{
-			Target:     "TRIX",
+		return &Signal{
+			Target:     TargetTRIX,
 			SignalType: "strong_bearish_divergence",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现TRIX顶背离！强烈开空信号",
 		}
 	}
 
-	return Signal{Target: "TRIX", SignalType: "none", Side: "none", Confidence: 0, Message: "未发现明确TRIX信号"}
+	return &Signal{Target: TargetTRIX, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确TRIX信号"}
 }
 
 // detectTRIXBullishDivergence 检测TRIX底背离
@@ -332,7 +360,7 @@ func findTRIXLow(data []*TRIXData, lookback int) (float64, int) {
 	return low, index
 }
 
-func GetTRIXSignal(klines []Kline, peroid int) Signal {
+func GetTRIXSignal(klines []Kline, peroid int, timePeriod string) *Signal {
 	// 1.	TRIX参数优化：
 	// o	短线交易：使用9-12周期，更敏感
 	// o	中线交易：使用15-20周期，平衡敏感度与稳定性
@@ -368,7 +396,7 @@ func GetTRIXSignal(klines []Kline, peroid int) Signal {
 	trixData := calculateTRIX(klines, 15)
 
 	// 分析TRIX信号
-	signal := analyzeTRIXSignal(trixData, 20)
+	signal := analyzeTRIXSignal(trixData, 20, timePeriod)
 
 	return signal
 }

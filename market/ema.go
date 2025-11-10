@@ -51,10 +51,29 @@ func calculateEMAData(klines []Kline, period int) []*EMAData {
 	return emaData
 }
 
+// 转换为字符串
+func getEMADataString(emaData []*EMAData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(emaData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := emaData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.EMA20)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeEMASignal 分析EMA20数据，生成交易信号
-func analyzeEMASignal(emaData []*EMAData, lookback int) Signal {
+func analyzeEMASignal(emaData []*EMAData, lookback int, period string) *Signal {
 	if len(emaData) < lookback+1 {
-		return Signal{Target: "EMA20", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetEMA, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := emaData[len(emaData)-1]
@@ -69,10 +88,11 @@ func analyzeEMASignal(emaData []*EMAData, lookback int) Signal {
 	// 信号1: 价格穿越EMA20
 	// 从下方上穿EMA20
 	if prevPriceBelowEMA && priceAboveEMA {
-		return Signal{
-			Target:     "EMA20",
+		return &Signal{
+			Target:     TargetEMA,
 			SignalType: "bullish_crossover",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "价格上穿EMA20！短期趋势转多，潜在开多信号",
 		}
@@ -80,10 +100,11 @@ func analyzeEMASignal(emaData []*EMAData, lookback int) Signal {
 
 	// 从上下穿EMA20
 	if prevPriceAboveEMA && priceBelowEMA {
-		return Signal{
-			Target:     "EMA20",
+		return &Signal{
+			Target:     TargetEMA,
 			SignalType: "bearish_crossover",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "价格下穿EMA20！短期趋势转空，潜在开空信号",
 		}
@@ -96,18 +117,20 @@ func analyzeEMASignal(emaData []*EMAData, lookback int) Signal {
 		distancePercent := (current.ClosePrice - current.EMA20) / current.EMA20 * 100
 		if distancePercent < 1.0 { // 价格在EMA20附近1%范围内
 			if current.EMASlope > 0 {
-				return Signal{
-					Target:     "EMA20",
+				return &Signal{
+					Target:     TargetEMA,
 					SignalType: "bullish_support",
-					Side:       "buy",
+					Side:       SideBuy,
+					Period:     period,
 					Confidence: 0.8,
 					Message:    "价格在上升的EMA20处获得支撑！强烈开多信号",
 				}
 			}
-			return Signal{
-				Target:     "EMA20",
+			return &Signal{
+				Target:     TargetEMA,
 				SignalType: "bullish_near_support",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "价格在EMA20支撑附近，关注做多机会",
 			}
@@ -119,18 +142,20 @@ func analyzeEMASignal(emaData []*EMAData, lookback int) Signal {
 		distancePercent := (current.EMA20 - current.ClosePrice) / current.EMA20 * 100
 		if distancePercent < 1.0 { // 价格在EMA20附近1%范围内
 			if current.EMASlope < 0 {
-				return Signal{
-					Target:     "EMA20",
+				return &Signal{
+					Target:     TargetEMA,
 					SignalType: "bearish_resistance",
-					Side:       "sell",
+					Side:       SideSell,
+					Period:     period,
 					Confidence: 0.8,
 					Message:    "价格在下降的EMA20处受到阻力！强烈开空信号",
 				}
 			}
-			return Signal{
-				Target:     "EMA20",
+			return &Signal{
+				Target:     TargetEMA,
 				SignalType: "bearish_near_resistance",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     period,
 				Confidence: 0.6,
 				Message:    "价格在EMA20阻力附近，关注做空机会",
 			}
@@ -139,30 +164,32 @@ func analyzeEMASignal(emaData []*EMAData, lookback int) Signal {
 
 	// 信号3: 趋势强度判断
 	if priceAboveEMA && current.EMASlope > 0 {
-		return Signal{
-			Target:     "EMA20",
+		return &Signal{
+			Target:     TargetEMA,
 			SignalType: "strong_bullish_trend",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "价格在EMA20上方且EMA斜率向上，强势上涨趋势",
 		}
 	}
 
 	if priceBelowEMA && current.EMASlope < 0 {
-		return Signal{
-			Target:     "EMA20",
+		return &Signal{
+			Target:     TargetEMA,
 			SignalType: "strong_bearish_trend",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "价格在EMA20下方且EMA斜率向下，强势下跌趋势",
 		}
 	}
 
-	return Signal{Target: "EMA20", SignalType: "none", Side: "none", Confidence: 0, Message: "未发现明确信号，建议观望"}
+	return &Signal{Target: TargetEMA, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确信号，建议观望"}
 }
 
 // 获取信号
-func GetEMASignal(klines []Kline, period int) Signal {
+func getEMASignal(klines []Kline, period int, timePeriod string) *Signal {
 	// 1.	结合其他指标过滤假信号：EMA20在趋势市中表现优异，但在震荡市中会产生大量“拉锯”信号。务必结合以下工具：
 	// o	布林带：在布林带收缩后突破时，EMA20的穿越信号更可靠。
 	// o	MACD/RSI：用于确认动量和超买超卖状态。
@@ -186,7 +213,7 @@ func GetEMASignal(klines []Kline, period int) Signal {
 	emaData := calculateEMAData(klines, period)
 
 	// 分析信号
-	signal := analyzeEMASignal(emaData, 5)
+	signal := analyzeEMASignal(emaData, 5, timePeriod)
 
 	return signal
 }

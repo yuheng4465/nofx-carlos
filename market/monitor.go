@@ -26,7 +26,8 @@ type WSMonitor struct {
 	klineDataMap3m  sync.Map // 存储每个交易对的K线历史数据
 	klineDataMap15m sync.Map // 存储每个交易对的15分钟K线历史数据
 	klineDataMap1h  sync.Map // 存储每个交易对的1小时K线历史数据
-	klineDataMap4h  sync.Map // 存储每个交易对的K线历史数据
+	klineDataMap4h  sync.Map // 存储每个交易对的4小时K线历史数据
+	klineDataMap1d  sync.Map // 存储每个交易对的1天K线历史数据
 	tickerDataMap   sync.Map // 存储每个交易对的ticker数据
 	tradesDataMap   sync.Map // 存储每个交易对的aggTrades数据
 	batchSize       int
@@ -43,7 +44,7 @@ type SymbolStats struct {
 }
 
 var WSMonitorCli *WSMonitor
-var subKlineTime = []string{"3m", "15m", "1h", "4h"} // 管理订阅流的K线周期
+var subKlineTime = []string{"3m", "15m", "1h", "4h", "1d"} // 管理订阅流的K线周期
 
 func NewWSMonitor(batchSize int) *WSMonitor {
 	WSMonitorCli = &WSMonitor{
@@ -162,8 +163,16 @@ func (m *WSMonitor) initializeHistoricalData() error {
 				m.klineDataMap4h.Store(s, klines4h)
 				log.Printf("已加载 %s 的历史K线数据-4h: %d 条", s, len(klines4h))
 			}
+			// 获取1天历史K线数据
+			klines1d, err := apiClient.GetKlines(s, "1d", 100)
+			if err != nil {
+				log.Printf("获取 %s 1d历史数据失败: %v", s, err)
+			} else if len(klines4h) > 0 {
+				m.klineDataMap1d.Store(s, klines1d)
+				log.Printf("已加载 %s 的历史K线数据-1d: %d 条", s, len(klines4h))
+			}
 			// 获取成交数据
-			trades, err := apiClient.GetTrades(symbol, 100)
+			trades, err := apiClient.GetTrades(symbol, 1000)
 			if err != nil {
 				log.Printf("获取 %s 最近成交数据失败: %v", s, err)
 			} else if len(trades) > 0 {
@@ -214,8 +223,8 @@ func (m *WSMonitor) subscribeSymbol(symbol, st string) []string {
 // subscribeSymbol 注册监听
 func (m *WSMonitor) subscribeTrade(symbol string) []string {
 	var streams []string
-	stream := fmt.Sprintf("%s@trade", strings.ToLower(symbol))
-	ch := m.combinedClient.AddSubscriber(stream, 500)
+	stream := fmt.Sprintf("%s@aggTrade", strings.ToLower(symbol))
+	ch := m.combinedClient.AddSubscriber(stream, 1000)
 	streams = append(streams, stream)
 	go m.handleTradeData(symbol, ch)
 
@@ -255,7 +264,7 @@ func (m *WSMonitor) processTradeUpdate(symbol string, trade TradeDetail) {
 			aggTrades = append(aggTrades, trade)
 
 			// 保持数据长度
-			if len(aggTrades) > 100 {
+			if len(aggTrades) > 1000 {
 				aggTrades = aggTrades[1:]
 			}
 		}
@@ -315,6 +324,8 @@ func (m *WSMonitor) getKlineDataMap(_time string) *sync.Map {
 		klineDataMap = &m.klineDataMap1h
 	case "4h":
 		klineDataMap = &m.klineDataMap4h
+	case "1d":
+		klineDataMap = &m.klineDataMap1d
 	default:
 		klineDataMap = &sync.Map{}
 	}
@@ -372,7 +383,7 @@ func (m *WSMonitor) GetCurrentTrades(symbol string) ([]TradeDetail, error) {
 	if !exists {
 		// 如果Ws数据未初始化完成时,单独使用api获取 - 兼容性代码 (防止在未初始化完成是,已经有交易员运行)
 		apiClient := NewAPIClient()
-		trades, err := apiClient.GetTrades(symbol, 500)
+		trades, err := apiClient.GetTrades(symbol, 1000)
 		if err != nil {
 			return nil, fmt.Errorf("获取近期成交失败: %v", err)
 		}

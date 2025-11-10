@@ -54,10 +54,29 @@ func calculateAVL(klines []Kline) []*AVLData {
 	return avlData
 }
 
+// 转换为字符串
+func getAVLDataString(avlData []*AVLData, period int) string {
+	var data []float64
+	// 取尾部数据
+	startIndex := len(avlData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := avlData[startIndex:]
+	for _, v := range lastData {
+		data = append(data, v.AVL)
+	}
+
+	// 将字节切片转换为字符串
+	jsonString := formatFloatSlice(data)
+
+	return jsonString
+}
+
 // analyzeAVLSignal 分析AVL数据，生成交易信号
-func analyzeAVLSignal(avlData []*AVLData, lookback int) Signal {
+func analyzeAVLSignal(avlData []*AVLData, lookback int) *Signal {
 	if len(avlData) < lookback+1 {
-		return Signal{Target: "AVL", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetAVL, SignalType: "none", Side: SideNone, Period: Period4h, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := avlData[len(avlData)-1]
@@ -78,10 +97,11 @@ func analyzeAVLSignal(avlData []*AVLData, lookback int) Signal {
 
 	// 价格上穿AVL
 	if prevPriceBelowAVL && priceAboveAVL {
-		return Signal{
-			Target:     "AVL",
+		return &Signal{
+			Target:     TargetAVL,
 			SignalType: "bullish_breakthrough",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     Period4h,
 			Confidence: 0.8,
 			Message:    "价格突破均价线！市场由亏转盈，强烈开多信号",
 		}
@@ -89,10 +109,11 @@ func analyzeAVLSignal(avlData []*AVLData, lookback int) Signal {
 
 	// 价格下穿AVL
 	if prevPriceAboveAVL && priceBelowAVL {
-		return Signal{
-			Target:     "AVL",
+		return &Signal{
+			Target:     TargetAVL,
 			SignalType: "bearish_breakdown",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     Period4h,
 			Confidence: 0.8,
 			Message:    "价格跌破均价线！市场由盈转亏，强烈开空信号",
 		}
@@ -104,18 +125,20 @@ func analyzeAVLSignal(avlData []*AVLData, lookback int) Signal {
 		distancePercent := (current.ClosePrice - current.AVL) / current.AVL * 100
 		if distancePercent < 1.0 { // 价格在AVL附近1%范围内
 			if avlSlope > 0 {
-				return Signal{
-					Target:     "AVL",
+				return &Signal{
+					Target:     TargetAVL,
 					SignalType: "bullish_cost_support",
-					Side:       "buy",
+					Side:       SideBuy,
+					Period:     Period4h,
 					Confidence: 0.9,
 					Message:    "价格在上升的均价线处获得成本支撑！极佳开多机会",
 				}
 			}
-			return Signal{
-				Target:     "AVL",
+			return &Signal{
+				Target:     TargetAVL,
 				SignalType: "bullish_near_support",
-				Side:       "buy",
+				Side:       SideBuy,
+				Period:     Period4h,
 				Confidence: 0.7,
 				Message:    "价格在均价线支撑附近，关注做多机会",
 			}
@@ -126,18 +149,20 @@ func analyzeAVLSignal(avlData []*AVLData, lookback int) Signal {
 		distancePercent := (current.AVL - current.ClosePrice) / current.AVL * 100
 		if distancePercent < 1.0 { // 价格在AVL附近1%范围内
 			if avlSlope < 0 {
-				return Signal{
-					Target:     "AVL",
+				return &Signal{
+					Target:     TargetAVL,
 					SignalType: "bearish_cost_resistance",
-					Side:       "sell",
+					Side:       SideSell,
+					Period:     Period4h,
 					Confidence: 0.9,
 					Message:    "价格在下降的均价线处受到成本阻力！极佳开空机会",
 				}
 			}
-			return Signal{
-				Target:     "AVL",
+			return &Signal{
+				Target:     TargetAVL,
 				SignalType: "bearish_near_resistance",
-				Side:       "sell",
+				Side:       SideSell,
+				Period:     Period4h,
 				Confidence: 0.7,
 				Message:    "价格在均价线阻力附近，关注做空机会",
 			}
@@ -149,20 +174,22 @@ func analyzeAVLSignal(avlData []*AVLData, lookback int) Signal {
 	distanceFromAVL := (current.ClosePrice - current.AVL) / current.AVL * 100
 
 	if distanceFromAVL > 5.0 { // 价格高于AVL 5%以上
-		return Signal{
-			Target:     "AVL",
+		return &Signal{
+			Target:     TargetAVL,
 			SignalType: "overextended_bullish",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     Period4h,
 			Confidence: 0.6,
 			Message:    "价格大幅高于均价线，警惕均值回归回调",
 		}
 	}
 
 	if distanceFromAVL < -5.0 { // 价格低于AVL 5%以上
-		return Signal{
-			Target:     "AVL",
+		return &Signal{
+			Target:     TargetAVL,
 			SignalType: "overextended_bearish",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     Period4h,
 			Confidence: 0.6,
 			Message:    "价格大幅低于均价线，关注均值回归反弹",
 		}
@@ -170,30 +197,31 @@ func analyzeAVLSignal(avlData []*AVLData, lookback int) Signal {
 
 	// 信号4: 趋势判断
 	if priceAboveAVL && avlSlope > 0 {
-		return Signal{
-			Target:     "AVL",
+		return &Signal{
+			Target:     TargetAVL,
 			SignalType: "strong_bullish_trend",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     Period4h,
 			Confidence: 0.7,
 			Message:    "价格在均价线上方且均价线上升，牛市格局健康",
 		}
 	}
 
 	if priceBelowAVL && avlSlope < 0 {
-		return Signal{
-			Target:     "AVL",
+		return &Signal{
+			Target:     TargetAVL,
 			SignalType: "strong_bearish_trend",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     Period4h,
 			Confidence: 0.7,
 			Message:    "价格在均价线下方且均价线下降，熊市格局确认",
 		}
 	}
 
-	return Signal{Target: "AVL", SignalType: "none", Side: "none", Confidence: 0, Message: "未发现明确信号"}
+	return &Signal{Target: TargetAVL, SignalType: "none", Side: SideNone, Period: Period4h, Confidence: 0.5, Message: "未发现明确信号"}
 }
 
-// 在主函数中调用
-func GetAVLSignal(klines []Kline) Signal {
+func getAVLSignal(klines []Kline) *Signal {
 	// AVL适合日线或更长周期分析
 
 	// 1. AVL的周期选择：
@@ -225,7 +253,6 @@ func GetAVLSignal(klines []Kline) Signal {
 	// o 不要在所有时间框架使用同一AVL
 	// o AVL不是领先指标，而是确认指标
 	// o 在极端行情中，AVL可能会被短暂突破但很快回归
-
 	avlData := calculateAVL(klines)
 
 	// 分析AVL信号

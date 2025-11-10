@@ -1,5 +1,7 @@
 package market
 
+import "fmt"
+
 // MTMData 存储MTM数据点
 type MTMData struct {
 	OpenTime     int64
@@ -10,76 +12,74 @@ type MTMData struct {
 	PriceChange  float64 // 价格变化
 }
 
-// MTMSignal 存储MTM分析信号
-type MTMSignal struct {
-	SignalType string
-	Confidence float64
-	Message    string
-}
-
 // calculateMTM 计算动量指标
 func calculateMTM(klines []Kline, period int, signalPeriod int) []*MTMData {
-	var mtmData []*MTMData
-
-	for i := range klines {
-		closePrice := klines[i].Close
-
-		if i < period {
-			// 数据不足时填充空值
-			mtmData = append(mtmData, &MTMData{
-				OpenTime:     klines[i].OpenTime,
-				ClosePrice:   closePrice,
-				MTM:          0,
-				MTMMovingAvg: 0,
-				MomentumRate: 0,
-				PriceChange:  0,
-			})
-			continue
-		}
-
-		// 计算MTM
-		prevClose := klines[i-period].Close
-		mtm := closePrice - prevClose
-
-		// 计算动量变化率
-		momentumRate := 0.0
-		if prevClose != 0 {
-			momentumRate = (closePrice/prevClose - 1) * 100
-		}
-
-		// 计算价格变化
-		priceChange := 0.0
-		if i > 0 {
-			prevPrice := klines[i-1].Close
-			priceChange = closePrice - prevPrice
-		}
-
-		// 计算MTM移动平均（信号线）
-		mtmMovingAvg := 0.0
-		if i >= period+signalPeriod-1 {
-			sumMTM := 0.0
-			for j := 0; j < signalPeriod; j++ {
-				sumMTM += mtmData[i-j].MTM
-			}
-			mtmMovingAvg = sumMTM / float64(signalPeriod)
-		}
-
-		mtmData = append(mtmData, &MTMData{
-			OpenTime:     klines[i].OpenTime,
-			ClosePrice:   closePrice,
-			MTM:          mtm,
-			MTMMovingAvg: mtmMovingAvg,
-			MomentumRate: momentumRate,
-			PriceChange:  priceChange,
-		})
+	if len(klines) == 0 {
+		return nil
 	}
+
+	mtmData := make([]*MTMData, len(klines))
+
+	// 第一遍：计算基础MTM值
+	for i := range klines {
+		mtmData[i] = &MTMData{
+			OpenTime:   klines[i].OpenTime,
+			ClosePrice: klines[i].Close,
+		}
+
+		if i >= period {
+			prevClose := klines[i-period].Close
+			mtmData[i].MTM = klines[i].Close - prevClose
+
+			if prevClose != 0 {
+				mtmData[i].MomentumRate = (klines[i].Close/prevClose - 1) * 100
+			}
+		}
+
+		if i > 0 {
+			mtmData[i].PriceChange = klines[i].Close - klines[i-1].Close
+		}
+	}
+
+	// 第二遍：计算移动平均（确保所有MTM值都已计算）
+	for i := range mtmData {
+		if i >= period+signalPeriod-1 {
+			sum := 0.0
+			for j := i - signalPeriod + 1; j <= i; j++ {
+				sum += mtmData[j].MTM
+			}
+			mtmData[i].MTMMovingAvg = sum / float64(signalPeriod)
+		}
+	}
+
 	return mtmData
 }
 
+// 转换为字符串
+func getMTMDataString(mtmData []*MTMData, period int) string {
+	var MTM, MTMMovingAvg []float64
+	// 取尾部数据
+	startIndex := len(mtmData) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := mtmData[startIndex:]
+	for _, v := range lastData {
+		MTM = append(MTM, v.MTM)
+		MTMMovingAvg = append(MTMMovingAvg, v.MTMMovingAvg)
+	}
+
+	// 将字节切片转换为字符串
+	MTMStr := formatFloatSlice(MTM)
+	MTMMovingAvgStr := formatFloatSlice(MTMMovingAvg)
+
+	return fmt.Sprintf("MTM: %s , MTMMovingAvg: %s", MTMStr, MTMMovingAvgStr)
+}
+
 // analyzeMTMSignal 分析MTM数据，生成交易信号
-func analyzeMTMSignal(mtmData []*MTMData, lookback int) Signal {
+func analyzeMTMSignal(mtmData []*MTMData, lookback int, period string) *Signal {
 	if len(mtmData) < lookback+1 {
-		return Signal{Target: "MTM", SignalType: "none", Side: "none", Confidence: 0, Message: "数据不足"}
+		return &Signal{Target: TargetMTM, SignalType: "none", Side: SideNone, Period: period, Confidence: 0, Message: "数据不足"}
 	}
 
 	current := mtmData[len(mtmData)-1]
@@ -88,10 +88,11 @@ func analyzeMTMSignal(mtmData []*MTMData, lookback int) Signal {
 	// 信号1: 零轴穿越
 	// MTM上穿零轴
 	if prev.MTM <= 0 && current.MTM > 0 {
-		return Signal{
-			Target:     "MTM",
+		return &Signal{
+			Target:     TargetMTM,
 			SignalType: "bullish_zero_cross",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "MTM上穿零轴！下跌动量转为上升动量，开多信号",
 		}
@@ -99,10 +100,11 @@ func analyzeMTMSignal(mtmData []*MTMData, lookback int) Signal {
 
 	// MTM下穿零轴
 	if prev.MTM >= 0 && current.MTM < 0 {
-		return Signal{
-			Target:     "MTM",
+		return &Signal{
+			Target:     TargetMTM,
 			SignalType: "bearish_zero_cross",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.8,
 			Message:    "MTM下穿零轴！上涨动量转为下跌动量，开空信号",
 		}
@@ -111,10 +113,11 @@ func analyzeMTMSignal(mtmData []*MTMData, lookback int) Signal {
 	// 信号2: 信号线交叉
 	// MTM上穿信号线
 	if current.MTMMovingAvg != 0 && prev.MTM <= prev.MTMMovingAvg && current.MTM > current.MTMMovingAvg {
-		return Signal{
-			Target:     "MTM",
+		return &Signal{
+			Target:     TargetMTM,
 			SignalType: "bullish_signal_cross",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "MTM上穿信号线！动量加速向上，开多信号",
 		}
@@ -122,10 +125,11 @@ func analyzeMTMSignal(mtmData []*MTMData, lookback int) Signal {
 
 	// MTM下穿信号线
 	if current.MTMMovingAvg != 0 && prev.MTM >= prev.MTMMovingAvg && current.MTM < current.MTMMovingAvg {
-		return Signal{
-			Target:     "MTM",
+		return &Signal{
+			Target:     TargetMTM,
 			SignalType: "bearish_signal_cross",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.7,
 			Message:    "MTM下穿信号线！动量加速向下，开空信号",
 		}
@@ -133,20 +137,22 @@ func analyzeMTMSignal(mtmData []*MTMData, lookback int) Signal {
 
 	// 信号3: 动量强度判断
 	if current.MTM > 0 && current.MTM > prev.MTM {
-		return Signal{
-			Target:     "MTM",
+		return &Signal{
+			Target:     TargetMTM,
 			SignalType: "bullish_acceleration",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "MTM为正且加速上升，上涨动量强劲",
 		}
 	}
 
 	if current.MTM < 0 && current.MTM < prev.MTM {
-		return Signal{
-			Target:     "MTM",
+		return &Signal{
+			Target:     TargetMTM,
 			SignalType: "bearish_acceleration",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.6,
 			Message:    "MTM为负且加速下降，下跌动量强劲",
 		}
@@ -154,20 +160,22 @@ func analyzeMTMSignal(mtmData []*MTMData, lookback int) Signal {
 
 	// 信号4: 动量减速预警
 	if current.MTM > 0 && current.MTM < prev.MTM {
-		return Signal{
-			Target:     "MTM",
+		return &Signal{
+			Target:     TargetMTM,
 			SignalType: "bullish_deceleration",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.5,
 			Message:    "MTM为正但开始减速，上涨动量减弱",
 		}
 	}
 
 	if current.MTM < 0 && current.MTM > prev.MTM {
-		return Signal{
-			Target:     "MTM",
+		return &Signal{
+			Target:     TargetMTM,
 			SignalType: "bearish_deceleration",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.5,
 			Message:    "MTM为负但开始减速，下跌动量减弱",
 		}
@@ -178,26 +186,28 @@ func analyzeMTMSignal(mtmData []*MTMData, lookback int) Signal {
 	bearishDivergence := detectMTMBearishDivergence(mtmData, lookback)
 
 	if bullishDivergence {
-		return Signal{
-			Target:     "MTM",
+		return &Signal{
+			Target:     TargetMTM,
 			SignalType: "strong_bullish_divergence",
-			Side:       "buy",
+			Side:       SideBuy,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现MTM底背离！价格创新低但动量未创新低，强烈开多信号",
 		}
 	}
 
 	if bearishDivergence {
-		return Signal{
-			Target:     "MTM",
+		return &Signal{
+			Target:     TargetMTM,
 			SignalType: "strong_bearish_divergence",
-			Side:       "sell",
+			Side:       SideSell,
+			Period:     period,
 			Confidence: 0.9,
 			Message:    "发现MTM顶背离！价格创新高但动量未创新高，强烈开空信号",
 		}
 	}
 
-	return Signal{Target: "MTM", SignalType: "none", Side: "none", Confidence: 0.5, Message: "未发现明确MTM信号"}
+	return &Signal{Target: TargetMTM, SignalType: "none", Side: SideNone, Period: period, Confidence: 0.5, Message: "未发现明确MTM信号"}
 }
 
 // detectMTMBullishDivergence 检测MTM底背离
@@ -320,7 +330,7 @@ func findMTMLow(data []*MTMData, lookback int) (float64, int) {
 	return low, index
 }
 
-func GetMTMSignal(klines []Kline) Signal {
+func GetMTMSignal(klines []Kline, period string) *Signal {
 	// 1.	MTM参数优化：
 	// o	标准参数：10周期（平衡敏感度和稳定性）
 	// o	短线交易：6-8周期（更敏感）
@@ -363,7 +373,7 @@ func GetMTMSignal(klines []Kline) Signal {
 	mtmData := calculateMTM(klines, 10, 6)
 
 	// 分析MTM信号
-	signal := analyzeMTMSignal(mtmData, 20)
+	signal := analyzeMTMSignal(mtmData, 20, period)
 
 	return signal
 }
