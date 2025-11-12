@@ -127,8 +127,11 @@ func GetFullDecisionWithCustomPrompt(ctx *Context, mcpClient *mcp.Client, custom
 		return nil, fmt.Errorf("获取市场数据失败: %w", err)
 	}
 
-	// 2. 构建 System Prompt（固定规则）和 User Prompt（动态数据）
-	systemPrompt := buildSystemPromptWithCustom(ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage, customPrompt, overrideBase, templateName)
+	// 2. 提取夏普比率
+	sharpeRatio := extractSharpeRatio(ctx.Performance)
+
+	// 3. 构建 System Prompt（固定规则）和 User Prompt（动态数据）
+	systemPrompt := buildSystemPromptWithCustom(ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage, sharpeRatio, customPrompt, overrideBase, templateName)
 	userPrompt := buildUserPrompt(ctx)
 	/////////////////////////////////////////////////////////////////////////
 	var Decisions = []Decision{}
@@ -141,13 +144,13 @@ func GetFullDecisionWithCustomPrompt(ctx *Context, mcpClient *mcp.Client, custom
 	}, nil
 	////////////////////////////////////////////////////////////////////////
 
-	// 3. 调用AI API（使用 system + user prompt）
+	// 4. 调用AI API（使用 system + user prompt）
 	// aiResponse, err := mcpClient.CallWithMessages(systemPrompt, userPrompt)
 	// if err != nil {
 	// 	return nil, fmt.Errorf("调用AI API失败: %w", err)
 	// }
 
-	// // 4. 解析AI响应
+	// // 5. 解析AI响应
 	// decision, err := parseFullDecisionResponse(aiResponse, ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage, ctx.Account.PositionCount)
 
 	// // 无论是否有错误，都要保存 SystemPrompt 和 UserPrompt（用于调试和决策未执行后的问题定位）
@@ -243,6 +246,26 @@ func fetchMarketDataForContext(ctx *Context) error {
 	return nil
 }
 
+// extractSharpeRatio 从Performance中提取夏普比率
+func extractSharpeRatio(performance interface{}) float64 {
+	if performance == nil {
+		return 0.0
+	}
+
+	type PerformanceData struct {
+		SharpeRatio float64 `json:"sharpe_ratio"`
+	}
+
+	var perfData PerformanceData
+	if jsonData, err := json.Marshal(performance); err == nil {
+		if err := json.Unmarshal(jsonData, &perfData); err == nil {
+			return perfData.SharpeRatio
+		}
+	}
+
+	return 0.0
+}
+
 // calculateMaxCandidates 根据账户状态计算需要分析的候选币种数量
 func calculateMaxCandidates(ctx *Context) int {
 	// ⚠️ 重要：限制候选币种数量，避免 Prompt 过大
@@ -273,14 +296,14 @@ func calculateMaxCandidates(ctx *Context) int {
 }
 
 // buildSystemPromptWithCustom 构建包含自定义内容的 System Prompt
-func buildSystemPromptWithCustom(accountEquity float64, btcEthLeverage, altcoinLeverage int, customPrompt string, overrideBase bool, templateName string) string {
+func buildSystemPromptWithCustom(accountEquity float64, btcEthLeverage, altcoinLeverage int, sharpeRatio float64, customPrompt string, overrideBase bool, templateName string) string {
 	// 如果覆盖基础prompt且有自定义prompt，只使用自定义prompt
 	if overrideBase && customPrompt != "" {
 		return customPrompt
 	}
 
 	// 获取基础prompt（使用指定的模板）
-	basePrompt := buildSystemPrompt(accountEquity, btcEthLeverage, altcoinLeverage, templateName)
+	basePrompt := buildSystemPrompt(accountEquity, btcEthLeverage, altcoinLeverage, sharpeRatio, templateName)
 
 	// 如果没有自定义prompt，直接返回基础prompt
 	if customPrompt == "" {
@@ -300,7 +323,7 @@ func buildSystemPromptWithCustom(accountEquity float64, btcEthLeverage, altcoinL
 }
 
 // buildSystemPrompt 构建 System Prompt（使用模板+动态部分）
-func buildSystemPrompt(accountEquity float64, btcEthLeverage, altcoinLeverage int, templateName string) string {
+func buildSystemPrompt(accountEquity float64, btcEthLeverage, altcoinLeverage int, sharpeRatio float64, templateName string) string {
 	var sb strings.Builder
 
 	// 1. 加载提示词模板（核心交易策略部分）
@@ -326,17 +349,75 @@ func buildSystemPrompt(accountEquity float64, btcEthLeverage, altcoinLeverage in
 		sb.WriteString("\n\n")
 	}
 
-	// 2. 硬约束（风险控制）- 动态生成
+	// 2. 硬约束（风险控制）- 根据夏普比率动态调整
 	sb.WriteString("# 硬约束（风险控制）\n\n")
-	sb.WriteString("1. 风险回报比: 必须 ≥ 1:2\n")
-	sb.WriteString("2. 最多持仓: 3个\n")
-	sb.WriteString(fmt.Sprintf("3. 单币仓位: 山寨%.0f-%.0f U | BTC/ETH %.0f-%.0f U\n",
-		accountEquity*0.8, accountEquity*1.5, accountEquity*5, accountEquity*10))
-	sb.WriteString(fmt.Sprintf("4. 杠杆限制: **山寨币最大%dx杠杆** | **BTC/ETH最大%dx杠杆** (⚠️ 严格执行，不可超过)\n", altcoinLeverage, btcEthLeverage))
-	sb.WriteString("5. 保证金: 总使用率 ≤ 90%\n")
-	sb.WriteString("6. 开仓金额: 建议 **≥12 USDT** (交易所最小名义价值 10 USDT + 安全边际)\n\n")
 
-	// 3. 输出格式 - 动态生成
+	// ⚠️ 杠杆限制说明（所有模式通用）
+	sb.WriteString("## 📌 杠杆限制（当前配置）\n\n")
+	sb.WriteString(fmt.Sprintf("- **BTC/ETH**: 杠杆必须在 1-%d 倍之间（当前配置上限 %d 倍）\n", btcEthLeverage, btcEthLeverage))
+	sb.WriteString(fmt.Sprintf("- **山寨币**: 杠杆必须在 1-%d 倍之间（当前配置上限 %d 倍）\n\n", altcoinLeverage, altcoinLeverage))
+	sb.WriteString("⚠️ **重要**：你在决策JSON中返回的 `leverage` 值，**绝对不能超过上述上限**，否则决策会被系统拒绝。\n\n")
+
+	// 根据夏普比率判断风险模式
+	isDefensiveMode := sharpeRatio < 0
+
+	// 定义仓位变量（所有模式都需要）
+	var altcoinPositionValue, altcoinMargin, btcPositionValue, btcMargin float64
+
+	if isDefensiveMode {
+		sb.WriteString("## ⚠️ 当前处于防御模式（夏普比率 < 0）\n\n")
+		sb.WriteString("**⚠️ 注意：防御模式已放宽开仓要求，信心度≥80即可开仓（不再要求≥85）**\n\n")
+		sb.WriteString("**强制执行规则**：\n")
+		sb.WriteString("- ⚠️ 谨慎开仓：最多持有1个币种（极度保守）\n")
+		sb.WriteString("- ✅ 允许操作：所有操作（open_long, open_short, close_long, close_short, hold, wait）\n")
+		sb.WriteString("- 📊 专注于高确定性机会，严格止损\n")
+		sb.WriteString("- 🔒 保证金使用率必须 ≤ 25%\n\n")
+		sb.WriteString("**防御模式具体要求**：\n")
+		sb.WriteString("1. 最多持仓: 1个币种（极度保守）\n")
+		sb.WriteString("2. 新开仓: 允许，但需高确定性（**信心度≥80**，风险回报比≥1:3）\n")
+		sb.WriteString("3. 保证金限制: ≤ 25%（为避险预留空间）\n\n")
+
+		// 防御模式：单币仓位按账户净值计算（1币最多25%保证金）
+		altcoinPositionValue = accountEquity * 1.25 // 山寨币 125% 账户净值（5倍杠杆=25%保证金）
+		altcoinMargin = altcoinPositionValue / float64(altcoinLeverage)
+		btcPositionValue = accountEquity * 1.25 // BTC/ETH 125% 账户净值（5倍杠杆=25%保证金）
+		btcMargin = btcPositionValue / float64(btcEthLeverage)
+
+		sb.WriteString(fmt.Sprintf("4. 单币仓位: 山寨%.0f U仓位价值(%dx杠杆,%.0fU保证金) | BTC/ETH %.0f U仓位价值(%dx杠杆,%.0fU保证金)\n\n",
+			altcoinPositionValue, altcoinLeverage, altcoinMargin, btcPositionValue, btcEthLeverage, btcMargin))
+
+	} else if sharpeRatio < 0.3 {
+		sb.WriteString("## ⚡ 当前处于谨慎模式（夏普比率 0-0.3）\n\n")
+		sb.WriteString("1. 风险回报比: 必须 ≥ 1:2.5（提高标准）\n")
+		sb.WriteString("2. 最多持仓: 3个币种（减少风险暴露）\n")
+
+		// 谨慎模式：单币仓位按18.3%账户净值计算（3币最多55%保证金）
+		altcoinPositionValue = accountEquity * 0.917 // 山寨币 91.7% 账户净值（5倍杠杆=18.3%保证金）
+		altcoinMargin = altcoinPositionValue / float64(altcoinLeverage)
+		btcPositionValue = accountEquity * 0.917 // BTC/ETH 91.7% 账户净值（5倍杠杆=18.3%保证金）
+		btcMargin = btcPositionValue / float64(btcEthLeverage)
+
+		sb.WriteString(fmt.Sprintf("3. 单币仓位: 山寨%.0f U仓位价值(%dx杠杆,%.0fU保证金) | BTC/ETH %.0f U仓位价值(%dx杠杆,%.0fU保证金)\n",
+			altcoinPositionValue, altcoinLeverage, altcoinMargin, btcPositionValue, btcEthLeverage, btcMargin))
+		sb.WriteString("4. 保证金: 总使用率 ≤ 55%\n")
+		sb.WriteString("5. 开仓前检查: 确保信心度 ≥ 80，多周期确认必须完全一致\n\n")
+	} else {
+		sb.WriteString("## ✅ 当前处于标准模式（夏普比率 ≥ 0.3）\n\n")
+		sb.WriteString("1. 风险回报比: 必须 ≥ 1:2（冒1%风险，赚2%+收益）\n")
+		sb.WriteString("2. 最多持仓: 5个币种（分散风险）\n")
+
+		// 标准模式：单币仓位按17%账户净值计算（5币最多85%保证金）
+		altcoinPositionValue = accountEquity * 0.85 // 山寨币 85% 账户净值（5倍杠杆=17%保证金）
+		altcoinMargin = altcoinPositionValue / float64(altcoinLeverage)
+		btcPositionValue = accountEquity * 0.85 // BTC/ETH 85% 账户净值（5倍杠杆=17%保证金）
+		btcMargin = btcPositionValue / float64(btcEthLeverage)
+
+		sb.WriteString(fmt.Sprintf("3. 单币仓位: 山寨%.0f U仓位价值(%dx杠杆,%.0fU保证金) | BTC/ETH %.0f U仓位价值(%dx杠杆,%.0fU保证金)\n",
+			altcoinPositionValue, altcoinLeverage, altcoinMargin, btcPositionValue, btcEthLeverage, btcMargin))
+		sb.WriteString("4. 保证金: 总使用率 ≤ 85%\n\n")
+	}
+
+	// 3. 输出格式 - 根据模式动态生成
 	sb.WriteString("# 输出格式 (严格遵守)\n\n")
 	sb.WriteString("**必须使用XML标签 <reasoning> 和 <decision> 标签分隔思维链和决策JSON，避免解析错误**\n\n")
 	sb.WriteString("## 格式要求\n\n")
@@ -345,18 +426,67 @@ func buildSystemPrompt(accountEquity float64, btcEthLeverage, altcoinLeverage in
 	sb.WriteString("- 简洁分析你的思考过程 \n")
 	sb.WriteString("</reasoning>\n\n")
 	sb.WriteString("<decision>\n")
-	sb.WriteString("```json\n[\n")
-	sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 300, \"reasoning\": \"下跌趋势+MACD死叉\"},\n", btcEthLeverage, accountEquity*5))
-	sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\", \"reasoning\": \"止盈离场\"}\n")
-	sb.WriteString("]\n```\n")
-	sb.WriteString("</decision>\n\n")
-	sb.WriteString("## 字段说明\n\n")
-	sb.WriteString("- `action`: open_long | open_short | close_long | close_short | update_stop_loss | update_take_profit | partial_close | hold | wait\n")
-	sb.WriteString("- `confidence`: 0-100（开仓建议≥75）\n")
-	sb.WriteString("- 开仓时必填: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd, reasoning\n")
-	sb.WriteString("- update_stop_loss 必填: new_stop_loss, reasoning\n")
-	sb.WriteString("- update_take_profit 必填: new_take_profit, reasoning\n")
-	sb.WriteString("- partial_close 必填: close_percentage (0-100), reasoning\n\n")
+
+	if isDefensiveMode {
+		sb.WriteString("```json\n[\n")
+		sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_long\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 95000, \"take_profit\": 105000, \"confidence\": 92, \"risk_usd\": 10, \"reasoning\": \"防御模式：极高确定性机会，风险回报比1:3\"},\n", btcEthLeverage, btcPositionValue))
+		sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"wait\", \"reasoning\": \"防御模式：等待更明确信号\"}\n")
+		sb.WriteString("]\n```\n\n")
+		sb.WriteString("</decision>\n\n")
+		sb.WriteString("**⚠️ 防御模式开仓要求（已调整）**:\n")
+		sb.WriteString("- **信心度: ≥ 80**（已放宽，不再要求≥85）\n")
+		sb.WriteString("- 风险回报比: ≥ 1:3（3.0:1严格标准）\n")
+		sb.WriteString("- 持仓数量: 最多1个币种\n")
+		sb.WriteString("- 保证金: ≤ 25%\n")
+		sb.WriteString("- **注意**: 信心度80-85的机会可以开仓，不要再使用旧的≥85标准\n\n")
+	} else {
+		sb.WriteString("```json\n[\n")
+		sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 10, \"reasoning\": \"下跌趋势+MACD死叉\"},\n", btcEthLeverage, btcPositionValue))
+		sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\", \"reasoning\": \"止盈离场\"}\n")
+		sb.WriteString("]\n```\n\n")
+		sb.WriteString("</decision>\n\n")
+		sb.WriteString("## 字段说明\n\n")
+		sb.WriteString("- `action`: open_long | open_short | close_long | close_short | update_stop_loss | update_take_profit | partial_close | hold | wait\n")
+		if sharpeRatio < 0.3 {
+			sb.WriteString("- `confidence`: 0-100（谨慎模式开仓建议≥80，风险回报比≥1:2.5）\n")
+		} else {
+			sb.WriteString("- `confidence`: 0-100（标准模式开仓建议≥75，风险回报比≥1:2）\n")
+		}
+		sb.WriteString("- 开仓时必填: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd, reasoning\n")
+		sb.WriteString("- update_stop_loss 必填: new_stop_loss, reasoning\n")
+		sb.WriteString("- update_take_profit 必填: new_take_profit, reasoning\n")
+		sb.WriteString("- partial_close 必填: close_percentage (0-100), reasoning\n\n")
+	}
+
+	// sb.WriteString("1. 风险回报比: 必须 ≥ 1:2\n")
+	// sb.WriteString("2. 最多持仓: 3个\n")
+	// sb.WriteString(fmt.Sprintf("3. 单币仓位: 山寨%.0f-%.0f U | BTC/ETH %.0f-%.0f U\n",
+	// 	accountEquity*0.8, accountEquity*1.5, accountEquity*5, accountEquity*10))
+	// sb.WriteString(fmt.Sprintf("4. 杠杆限制: **山寨币最大%dx杠杆** | **BTC/ETH最大%dx杠杆** (⚠️ 严格执行，不可超过)\n", altcoinLeverage, btcEthLeverage))
+	// sb.WriteString("5. 保证金: 总使用率 ≤ 90%\n")
+	// sb.WriteString("6. 开仓金额: 建议 **≥12 USDT** (交易所最小名义价值 10 USDT + 安全边际)\n\n")
+
+	// // 3. 输出格式 - 动态生成
+	// sb.WriteString("# 输出格式 (严格遵守)\n\n")
+	// sb.WriteString("**必须使用XML标签 <reasoning> 和 <decision> 标签分隔思维链和决策JSON，避免解析错误**\n\n")
+	// sb.WriteString("## 格式要求\n\n")
+	// sb.WriteString("<reasoning>\n")
+	// sb.WriteString("你的思维链分析...\n")
+	// sb.WriteString("- 简洁分析你的思考过程 \n")
+	// sb.WriteString("</reasoning>\n\n")
+	// sb.WriteString("<decision>\n")
+	// sb.WriteString("```json\n[\n")
+	// sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 300, \"reasoning\": \"下跌趋势+MACD死叉\"},\n", btcEthLeverage, accountEquity*5))
+	// sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\", \"reasoning\": \"止盈离场\"}\n")
+	// sb.WriteString("]\n```\n")
+	// sb.WriteString("</decision>\n\n")
+	// sb.WriteString("## 字段说明\n\n")
+	// sb.WriteString("- `action`: open_long | open_short | close_long | close_short | update_stop_loss | update_take_profit | partial_close | hold | wait\n")
+	// sb.WriteString("- `confidence`: 0-100（开仓建议≥75）\n")
+	// sb.WriteString("- 开仓时必填: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd, reasoning\n")
+	// sb.WriteString("- update_stop_loss 必填: new_stop_loss, reasoning\n")
+	// sb.WriteString("- update_take_profit 必填: new_take_profit, reasoning\n")
+	// sb.WriteString("- partial_close 必填: close_percentage (0-100), reasoning\n\n")
 
 	return sb.String()
 }
@@ -677,9 +807,32 @@ func compactArrayOpen(s string) string {
 
 // validateDecisions 验证所有决策（需要账户信息和杠杆配置）
 func validateDecisions(decisions []Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, positionCount int) error {
-	for i, decision := range decisions {
-		if err := validateDecision(&decision, accountEquity, btcEthLeverage, altcoinLeverage, positionCount); err != nil {
-			return fmt.Errorf("决策 #%d 验证失败: %w", i+1, err)
+	// for i, decision := range decisions {
+	// if err := validateDecision(&decision, accountEquity, btcEthLeverage, altcoinLeverage, positionCount); err != nil {
+	// 	return fmt.Errorf("决策 #%d 验证失败: %w", i+1, err)
+	// }
+
+	var validationErrors []string
+	for i := range decisions {
+		if err := validateDecision(&decisions[i], accountEquity, btcEthLeverage, altcoinLeverage, positionCount); err != nil {
+			// 验证失败时，移除action字段并在reasoning中追加原因
+			validationErrors = append(validationErrors, fmt.Sprintf("决策 #%d: %s", i+1, err.Error()))
+
+			// 保存原始action用于记录
+			originalAction := decisions[i].Action
+
+			// 移除action字段，设置为空字符串（而不是删除字段）
+			decisions[i].Action = "wait"
+
+			// 在reasoning中追加失败原因
+			if decisions[i].Reasoning == "" {
+				decisions[i].Reasoning = fmt.Sprintf("决策无效: %s", err.Error())
+			} else {
+				decisions[i].Reasoning = fmt.Sprintf("%s | 决策无效: %s", decisions[i].Reasoning, err.Error())
+			}
+
+			// 记录日志
+			log.Printf("⚠️  决策已降级为wait: 位置#%d, 原action: %s, 原因: %s", i+1, originalAction, err.Error())
 		}
 	}
 	return nil

@@ -240,7 +240,9 @@ func main() {
 		log.Printf("⚠️  数据库中未配置default_coins，使用硬编码默认值")
 	}
 
-	defaultCoins = []string{"BTCUSDT", "ETHUSDT", "AIAUSDT"}
+	// 强制指定币种
+	defaultCoins = []string{"BTCUSDT", "ETHUSDT"}
+
 	pool.SetDefaultCoins(defaultCoins)
 	// 设置是否使用默认主流币种
 	pool.SetUseDefaultCoins(useDefaultCoins)

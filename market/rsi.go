@@ -91,6 +91,82 @@ func getRSIDataString(rsiData []*RSIData, period int) string {
 	return jsonString
 }
 
+// 获取策略所需数据
+func getRSICases(rsiData []*RSIData, lookback int) *Cases {
+	if len(rsiData) < lookback+1 {
+		return &Cases{}
+	}
+	current := rsiData[len(rsiData)-1]
+	prev := rsiData[len(rsiData)-2]
+
+	// 背离数据
+	recentPriceLow, prevPriceLow, recentRSILow, prevRSILow := detectBullishDivergenceData(rsiData, lookback)
+	recentPriceHigh, prevPriceHigh, recentRSIHigh, prevRSIHigh := detectBearishDivergenceData(rsiData, lookback)
+
+	casesData := &Cases{}
+	casesData.Name = TargetMACD
+	casesData.Metrics = map[string]interface{}{
+		"currentRSI":      current.RSI,
+		"prevRSI":         prev.RSI,
+		"currentPrice":    current.ClosePrice,
+		"prevPrice":       prev.ClosePrice,
+		"recentPriceLow":  recentPriceLow,
+		"prevPriceLow":    prevPriceLow,
+		"recentRSILow":    recentRSILow,
+		"prevRSILow":      prevRSILow,
+		"recentPriceHigh": recentPriceHigh,
+		"prevPriceHigh":   prevPriceHigh,
+		"recentRSIHigh":   recentRSIHigh,
+		"prevRSIHigh":     prevRSIHigh,
+	}
+
+	return casesData
+}
+
+// detectBullishDivergence 检测看多背离 (价格新低，RSI更高低点)
+func detectBullishDivergenceData(rsiData []*RSIData, lookback int) (float64, float64, float64, float64) {
+	if len(rsiData) < lookback {
+		return 0, 0, 0, 0
+	}
+
+	// 寻找价格低点和RSI低点
+	recentPriceLow, recentPriceLowIndex := findPriceLowRSI(rsiData, lookback)
+	recentRSILow, _ := findRSILow(rsiData, lookback)
+
+	// 寻找前一个价格低点和RSI低点
+	prevLookback := recentPriceLowIndex
+	if prevLookback < 5 {
+		return 0, 0, 0, 0
+	}
+	prevPriceLow, _ := findPriceLowRSI(rsiData[:prevLookback], 5)
+	prevRSILow, _ := findRSILow(rsiData[:prevLookback], 5)
+
+	// 检查背离：价格创新低，但RSI低点抬高
+	return recentPriceLow, prevPriceLow, recentRSILow, prevRSILow
+}
+
+// detectBearishDivergence 检测看空背离 (价格新高，RSI更低高点)
+func detectBearishDivergenceData(rsiData []*RSIData, lookback int) (float64, float64, float64, float64) {
+	if len(rsiData) < lookback {
+		return 0, 0, 0, 0
+	}
+
+	// 寻找价格高点和RSI高点
+	recentPriceHigh, recentPriceHighIndex := findPriceHighRSI(rsiData, lookback)
+	recentRSIHigh, _ := findRSIHigh(rsiData, lookback)
+
+	// 寻找前一个价格高点和RSI高点
+	prevLookback := recentPriceHighIndex
+	if prevLookback < 5 {
+		return 0, 0, 0, 0
+	}
+	prevPriceHigh, _ := findPriceHighRSI(rsiData[:prevLookback], 5)
+	prevRSIHigh, _ := findRSIHigh(rsiData[:prevLookback], 5)
+
+	// 检查背离：价格创新高，但RSI高点降低
+	return recentPriceHigh, prevPriceHigh, recentRSIHigh, prevRSIHigh
+}
+
 // analyzeRSISignal 分析RSI数据，生成交易信号
 func analyzeRSISignal(rsiData []*RSIData, lookback int, period string) *Signal {
 	if len(rsiData) < lookback+1 {

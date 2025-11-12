@@ -128,6 +128,94 @@ func getMACDDataString(macdData []*MACDData, period int) string {
 	return jsonString
 }
 
+// 获取策略所需数据
+func getMACDCases(macdData []*MACDData, lookback int) *Cases {
+	if len(macdData) < lookback+1 {
+		return &Cases{}
+	}
+
+	current := macdData[len(macdData)-1]
+	prev := macdData[len(macdData)-2]
+
+	currentMACD := current.MACDLine
+	prevMACD := prev.MACDLine
+
+	currentMACDSignal := current.SignalLine
+	prevMACDSignal := prev.SignalLine
+
+	currentMACDHist := current.Histogram
+	prevMACDHist := prev.Histogram
+
+	// 背离数据
+	recentPriceLow, prevPriceLow, recentMACDLow, prevMACDLow := detectMACDBullishDivergenceData(macdData, 20)
+	recentPriceHigh, prevPriceHigh, recentMACDHigh, prevMACDHigh := detectMACDBearishDivergenceData(macdData, 20)
+
+	casesData := &Cases{}
+	casesData.Name = TargetMACD
+	casesData.Metrics = map[string]interface{}{
+		"currentMACD":       currentMACD,
+		"prevMACD":          prevMACD,
+		"currentMACDSignal": currentMACDSignal,
+		"prevMACDSignal":    prevMACDSignal,
+		"currentMACDHist":   currentMACDHist,
+		"prevMACDHist":      prevMACDHist,
+		"recentPriceLow":    recentPriceLow,
+		"prevPriceLow":      prevPriceLow,
+		"recentMACDLow":     recentMACDLow,
+		"prevMACDLow":       prevMACDLow,
+		"recentPriceHigh":   recentPriceHigh,
+		"prevPriceHigh":     prevPriceHigh,
+		"recentMACDHigh":    recentMACDHigh,
+		"prevMACDHigh":      prevMACDHigh,
+	}
+
+	return casesData
+}
+
+// detectMACDBullishDivergence 检测MACD底背离
+func detectMACDBullishDivergenceData(macdData []*MACDData, lookback int) (float64, float64, float64, float64) {
+	if len(macdData) < lookback*2 {
+		return 0, 0, 0, 0
+	}
+
+	// 寻找价格低点和MACD低点
+	recentPriceLow, recentPriceLowIndex := findPriceLowMACD(macdData, lookback)
+	recentMACDLow, recentMACDLowIndex := findMACDHistogramLow(macdData, lookback)
+
+	// 寻找前一个低点
+	if recentPriceLowIndex < 5 || recentMACDLowIndex < 5 {
+		return 0, 0, 0, 0
+	}
+
+	prevPriceLow, _ := findPriceLowMACD(macdData[:recentPriceLowIndex], 5)
+	prevMACDLow, _ := findMACDHistogramLow(macdData[:recentMACDLowIndex], 5)
+
+	return recentPriceLow, prevPriceLow, recentMACDLow, prevMACDLow
+}
+
+// detectMACDBearishDivergence 检测MACD顶背离
+func detectMACDBearishDivergenceData(macdData []*MACDData, lookback int) (float64, float64, float64, float64) {
+	if len(macdData) < lookback*2 {
+		return 0, 0, 0, 0
+	}
+
+	// 寻找价格高点和MACD高点
+	recentPriceHigh, recentPriceHighIndex := findPriceHighMACD(macdData, lookback)
+	recentMACDHigh, recentMACDHighIndex := findMACDHistogramHigh(macdData, lookback)
+
+	// 寻找前一个高点
+	if recentPriceHighIndex < 5 || recentMACDHighIndex < 5 {
+		return 0, 0, 0, 0
+	}
+
+	prevPriceHigh, _ := findPriceHighMACD(macdData[:recentPriceHighIndex], 5)
+	prevMACDHigh, _ := findMACDHistogramHigh(macdData[:recentMACDHighIndex], 5)
+
+	// 检查背离：价格创新高，但MACD柱状线高点降低
+
+	return recentPriceHigh, prevPriceHigh, recentMACDHigh, prevMACDHigh
+}
+
 // analyzeMACDSignal 分析MACD数据，生成交易信号
 func analyzeMACDSignal(macdData []*MACDData, lookback int, period string) *Signal {
 	if len(macdData) < lookback+1 {

@@ -78,7 +78,12 @@ type FuturesTrader struct {
 
 // NewFuturesTrader 创建合约交易器
 func NewFuturesTrader(apiKey, secretKey string) *FuturesTrader {
+	apiKey = "mVC0c7SBHmmouSJ3LAViqWOkra2Ft1HUJC5ZrjeWpzlQevdlY14UndE53bhnV9c4"
+	secretKey = "lM4MsjOtWIKRtHiX7LQK603fqc9XHEpEIfkSck4oZdUc9MHW2y0rVkgUPEprxUu6"
 	client := futures.NewProxiedClient(apiKey, secretKey, "http://127.0.0.1:8800")
+
+	// 使用模拟盘测试
+	client.SetApiEndpoint("https://demo-fapi.binance.com")
 
 	trader := &FuturesTrader{
 		client:                client,

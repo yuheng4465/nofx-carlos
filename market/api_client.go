@@ -13,6 +13,7 @@ import (
 
 const (
 	baseURL = "https://fapi.binance.com"
+	// baseURL = "https://demo-fapi.binance.com"
 )
 
 type APIClient struct {

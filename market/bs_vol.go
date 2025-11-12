@@ -117,6 +117,39 @@ func getBSVOLDataString(volumeAnalysis []*VolumeAnalysis, period int) string {
 // 	}
 // }
 
+// 获取策略所需数据
+func getBSVOLCases(volumeAnalysis []*VolumeAnalysis, priceChanges []Kline) *Cases {
+	if len(volumeAnalysis) < 2 {
+		return &Cases{}
+	}
+
+	current := volumeAnalysis[len(volumeAnalysis)-1]
+	prev := volumeAnalysis[len(volumeAnalysis)-2]
+
+	// 计算价格变化
+	priceChange := 0.0
+	if len(priceChanges) >= 2 {
+		currentPrice := priceChanges[len(priceChanges)-1].Close
+		prevPrice := priceChanges[len(priceChanges)-2].Close
+		priceChange = (currentPrice - prevPrice) / prevPrice * 100
+	}
+
+	casesData := &Cases{}
+	casesData.Name = TargetMACD
+	casesData.Metrics = map[string]interface{}{
+		"priceChange":             priceChange,
+		"currentNetVolume":        current.NetVolume,
+		"currentVolumeRatio":      current.VolumeRatio,
+		"currentTotalVolume":      current.TotalVolume,
+		"prevTotalVolume":         prev.TotalVolume,
+		"prevNetVolume":           prev.NetVolume,
+		"currentActiveSellVolume": current.ActiveSellVolume,
+		"currentActiveBuyVolume":  current.ActiveBuyVolume,
+	}
+
+	return casesData
+}
+
 // generateBSVolumeSignal 生成主动买卖量交易信号
 func generateBSVolumeSignal(volumeAnalysis []*VolumeAnalysis, priceChanges []Kline) *Signal {
 	if len(volumeAnalysis) < 2 {
@@ -189,7 +222,7 @@ func generateBSVolumeSignal(volumeAnalysis []*VolumeAnalysis, priceChanges []Kli
 			return &Signal{
 				Target:     TargetBSVOL,
 				SignalType: "bearish_divergence",
-				Side:       SideWaring,
+				Side:       SideSell,
 				Period:     Period3m,
 				Confidence: 0.7,
 				Message:    "顶背离！价格创新高但主动买入力量减弱",
@@ -201,7 +234,7 @@ func generateBSVolumeSignal(volumeAnalysis []*VolumeAnalysis, priceChanges []Kli
 			return &Signal{
 				Target:     TargetBSVOL,
 				SignalType: "bullish_divergence",
-				Side:       SideWaring,
+				Side:       SideBuy,
 				Period:     Period3m,
 				Confidence: 0.7,
 				Message:    "底背离！价格创新低但主动卖出力量减弱",

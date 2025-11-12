@@ -22,6 +22,11 @@ type CombinedStreamsClient struct {
 	batchSize   int // 每批订阅的流数量
 }
 
+const (
+	BaseURL     = "wss://fstream.binance.com/stream"
+	TestBaseURL = "wss://fstream.binancefuture.com/stream"
+)
+
 func NewCombinedStreamsClient(batchSize int) *CombinedStreamsClient {
 	return &CombinedStreamsClient{
 		subscribers: make(map[string]chan []byte),
@@ -43,7 +48,7 @@ func (c *CombinedStreamsClient) Connect() error {
 	}
 
 	// 组合流使用不同的端点
-	conn, _, err := dialer.Dial("wss://fstream.binance.com/stream", nil)
+	conn, _, err := dialer.Dial(BaseURL, nil)
 	if err != nil {
 		return fmt.Errorf("组合流WebSocket连接失败: %v", err)
 	}

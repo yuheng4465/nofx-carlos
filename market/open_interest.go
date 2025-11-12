@@ -7,6 +7,28 @@ type OISignal struct {
 	Message    string
 }
 
+// 获取策略所需数据
+func getOICases(oiData []*OIData, priceData []Kline) *Cases {
+	if len(oiData) < 2 || len(priceData) < 2 {
+		return &Cases{}
+	}
+	currentOI := oiData[len(oiData)-1]
+	prevOI := oiData[len(oiData)-2]
+	currentPrice := priceData[len(oiData)-1]
+	prevPrice := priceData[len(oiData)-2]
+
+	casesData := &Cases{}
+	casesData.Name = TargetMACD
+	casesData.Metrics = map[string]interface{}{
+		"currentPrice": currentPrice.Close,
+		"prevPrice":    prevPrice.Close,
+		"currentOI":    currentOI.OpenInterest,
+		"prevOI":       prevOI.OpenInterest,
+	}
+
+	return casesData
+}
+
 // analyzeOISignal 分析OI与价格关系，生成交易信号
 func analyzeOISignal(oiData []*OIData, priceData []Kline, peroid string) *Signal {
 	if len(oiData) < 2 || len(priceData) < 2 {

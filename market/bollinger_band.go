@@ -95,6 +95,39 @@ func calculateBollingerWidth(bbData []*BollingerBandData) float64 {
 	return (current.UpperBand - current.LowerBand) / current.MiddleBand * 100
 }
 
+// 获取策略所需数据
+func getBollingerCases(bbData []*BollingerBandData, lookback int) *Cases {
+	if len(bbData) < lookback+1 {
+		return &Cases{}
+	}
+	current := bbData[len(bbData)-1]
+	prev := bbData[len(bbData)-2]
+
+	// 带宽
+	avgBandWidth := 0.0
+	for i := len(bbData) - lookback; i < len(bbData); i++ {
+		avgBandWidth += bbData[i].BandWidth
+	}
+	avgBandWidth /= float64(lookback)
+
+	casesData := &Cases{}
+	casesData.Name = TargetMACD
+	casesData.Metrics = map[string]interface{}{
+		"currentBandWidth":  current.BandWidth,
+		"avgBandWidth":      avgBandWidth,
+		"prevPrice":         prev.ClosePrice,
+		"currentPrice":      current.ClosePrice,
+		"prevUpperBand":     prev.UpperBand,
+		"currentUpperBand":  current.UpperBand,
+		"prevLowerBand":     prev.LowerBand,
+		"currentLowerBand":  current.LowerBand,
+		"currentMiddleBand": current.MiddleBand,
+		"prevMiddleBand":    prev.MiddleBand,
+	}
+
+	return casesData
+}
+
 // analyzeBollingerSignal 分析布林带数据，生成交易信号
 func analyzeBollingerSignal(bbData []*BollingerBandData, lookback int, period string) *Signal {
 	if len(bbData) < lookback+1 {

@@ -74,6 +74,40 @@ func getVolDataString(volumeData []*VolumeData, period int) string {
 	return jsonString
 }
 
+// 获取策略所需数据
+func getVOLCases(volumeData []*VolumeData, lookback int) *Cases {
+	if len(volumeData) < lookback+1 {
+		return &Cases{}
+	}
+	current := volumeData[len(volumeData)-1]
+	prev := volumeData[len(volumeData)-2]
+
+	recentPriceHighIndex, recentVolumeHighIndex, recentPriceLowIndex, recentVolumeLowIndex := 0, 0, 0, 0
+	if len(volumeData) >= 10 {
+		// 检查顶背离：价格创新高，但成交量未创新高
+		_, recentPriceHighIndex = findPriceHigh(volumeData, lookback)
+		_, recentVolumeHighIndex = findVolumeHigh(volumeData, lookback)
+
+		// 检查底背离：价格创新低，但成交量未创新低
+		_, recentPriceLowIndex = findPriceLow(volumeData, lookback)
+		_, recentVolumeLowIndex = findVolumeLow(volumeData, lookback)
+	}
+
+	casesData := &Cases{}
+	casesData.Name = TargetMACD
+	casesData.Metrics = map[string]interface{}{
+		"currentVolumeRatio":        current.VolumeRatio,
+		"currentPriceChangePercent": current.PriceChangePercent,
+		"prevPrice":                 prev.ClosePrice,
+		"recentPriceHighIndex":      recentPriceHighIndex,
+		"recentVolumeHighIndex":     recentVolumeHighIndex,
+		"recentPriceLowIndex":       recentPriceLowIndex,
+		"recentVolumeLowIndex":      recentVolumeLowIndex,
+	}
+
+	return casesData
+}
+
 // analyzeVolumeSignal 分析成交量数据，生成交易信号
 func analyzeVolumeSignal(volumeData []*VolumeData, lookback int, period string) *Signal {
 	if len(volumeData) < lookback+1 {

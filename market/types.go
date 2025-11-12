@@ -69,17 +69,23 @@ type MidTermData15m struct {
 	MACDValues  []float64
 	RSI7Values  []float64
 	RSI14Values []float64
-	EMA         []*EMAData  // EMA
-	MACD        []*MACDData // MACD
-	RSI         []*RSIData  // RSI
-	VWAP        []*VWAPData // VWAP
+	BOLL        []*BollingerBandData // BOLL
+	OI          []*OIData            // OI
+	EMA         []*EMAData           // EMA
+	MACD        []*MACDData          // MACD
+	RSI         []*RSIData           // RSI
+	VOL         []*VolumeData        // VOL
+	VWAP        []*VWAPData          // VWAP
 }
 
 // MidTermData1h 15分钟信号
 type MidTermSignalsData15m struct {
+	BOLL *Signal // BOLL
 	EMA  *Signal // EMA
+	OI   *Signal // OI
 	MACD *Signal // MACD
 	RSI  *Signal // RSI
+	VOL  *Signal // VOL
 	VWAP *Signal // VWAP
 }
 
@@ -377,12 +383,14 @@ const (
 
 // 分析信号
 type Signal struct {
-	Target     string  // 指标
-	Period     string  // 数据时间周期
-	SignalType string  // 信号类型
-	Side       string  // 多空方向：buy开多，sell开空，none无方向，waring警报
-	Confidence float64 // 信心
-	Message    string  // 消息
+	Target     string    // 指标
+	Period     string    // 数据时间周期
+	SignalType string    // 信号类型
+	Side       string    // 多空方向：buy开多，sell开空，none无方向，waring警报
+	Confidence float64   // 信心
+	Message    string    // 消息
+	Strategy   *Strategy // 策略
+	CaseData   *Cases    // 策略执行数据
 }
 
 // MarketState 定义市场状态
