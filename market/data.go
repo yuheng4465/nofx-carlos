@@ -1120,7 +1120,6 @@ func calculateLongerTermData1d(klines []Kline, symbol string) *LongerTermData1d 
 	if start < 0 {
 		start = 0
 	}
-
 	for i := start; i < len(klines); i++ {
 		data.MidPrices = append(data.MidPrices, klines[i].Close)
 	}

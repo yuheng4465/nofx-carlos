@@ -30,6 +30,7 @@ Thumbs.db
 .env
 config.json
 config.db
+.tool-versions
 
 # 决策日志
 prompts/
@@ -63,3 +64,4 @@ rsa_key*
 DATA_ENCRYPTION_KEY=*
 *.enc.secrets/
 config.db.*.backup
+web/yarn.lock
