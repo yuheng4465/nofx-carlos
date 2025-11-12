@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"nofx/hook"
 	"strconv"
 	"strings"
 	"sync"
@@ -77,9 +78,7 @@ type FuturesTrader struct {
 }
 
 // NewFuturesTrader 创建合约交易器
-func NewFuturesTrader(apiKey, secretKey string) *FuturesTrader {
-	apiKey = "mVC0c7SBHmmouSJ3LAViqWOkra2Ft1HUJC5ZrjeWpzlQevdlY14UndE53bhnV9c4"
-	secretKey = "lM4MsjOtWIKRtHiX7LQK603fqc9XHEpEIfkSck4oZdUc9MHW2y0rVkgUPEprxUu6"
+func NewFuturesTrader(apiKey, secretKey string, userId string) *FuturesTrader {
 	client := futures.NewProxiedClient(apiKey, secretKey, "http://127.0.0.1:8800")
 
 	// 使用模拟盘测试
@@ -91,6 +90,11 @@ func NewFuturesTrader(apiKey, secretKey string) *FuturesTrader {
 		cachedFormatsDuration: 300 * time.Second, // 5分钟缓存
 		timeSyncInterval:      30 * time.Second,
 		recvWindow:            futures.WithRecvWindow(5000), // 忽略服务器与本地时间差
+	}
+
+	hookRes := hook.HookExec[hook.NewBinanceTraderResult](hook.NEW_BINANCE_TRADER, userId, client)
+	if hookRes != nil && hookRes.GetResult() != nil {
+		client = hookRes.GetResult()
 	}
 
 	// 同步时间，避免 Timestamp ahead 错误

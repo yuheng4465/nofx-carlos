@@ -3,6 +3,7 @@ package market
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -928,6 +929,9 @@ func calculateIntradaySeries(klines []Kline) *IntradayData {
 		}
 	}
 
+	// 计算3m ATR14
+	data.ATR14 = calculateATR(klines, 14)
+
 	return data
 }
 
@@ -1343,46 +1347,6 @@ func Format(data *Data) string {
 	return sb.String()
 }
 
-// formatPriceWithDynamicPrecision 根据价格区间动态选择精度
-// 这样可以完美支持从超低价 meme coin (< 0.0001) 到 BTC/ETH 的所有币种
-func formatPriceWithDynamicPrecision(price float64) string {
-	switch {
-	case price < 0.0001:
-		// 超低价 meme coin: 1000SATS, 1000WHY, DOGS
-		// 0.00002070 → "0.00002070" (8位小数)
-		return fmt.Sprintf("%.8f", price)
-	case price < 0.001:
-		// 低价 meme coin: NEIRO, HMSTR, HOT, NOT
-		// 0.00015060 → "0.000151" (6位小数)
-		return fmt.Sprintf("%.6f", price)
-	case price < 0.01:
-		// 中低价币: PEPE, SHIB, MEME
-		// 0.00556800 → "0.005568" (6位小数)
-		return fmt.Sprintf("%.6f", price)
-	case price < 1.0:
-		// 低价币: ASTER, DOGE, ADA, TRX
-		// 0.9954 → "0.9954" (4位小数)
-		return fmt.Sprintf("%.4f", price)
-	case price < 100:
-		// 中价币: SOL, AVAX, LINK, MATIC
-		// 23.4567 → "23.4567" (4位小数)
-		return fmt.Sprintf("%.4f", price)
-	default:
-		// 高价币: BTC, ETH (节省 Token)
-		// 45678.9123 → "45678.91" (2位小数)
-		return fmt.Sprintf("%.2f", price)
-	}
-}
-
-// formatFloatSlice 格式化float64切片为字符串（使用动态精度）
-func formatFloatSlice(values []float64) string {
-	strValues := make([]string, len(values))
-	for i, v := range values {
-		strValues[i] = formatPriceWithDynamicPrecision(v)
-	}
-	return "[" + strings.Join(strValues, ", ") + "]"
-}
-
 func formatStringStruct[T any](slice T) string {
 	jsonData, err := json.Marshal(slice)
 	if err != nil {
@@ -1394,31 +1358,6 @@ func formatStringStruct[T any](slice T) string {
 	jsonString := string(jsonData)
 
 	return jsonString
-}
-
-// Normalize 标准化symbol,确保是USDT交易对
-func Normalize(symbol string) string {
-	symbol = strings.ToUpper(symbol)
-	if strings.HasSuffix(symbol, "USDT") {
-		return symbol
-	}
-	return symbol + "USDT"
-}
-
-// parseFloat 解析float值
-func parseFloat(v interface{}) (float64, error) {
-	switch val := v.(type) {
-	case string:
-		return strconv.ParseFloat(val, 64)
-	case float64:
-		return val, nil
-	case int:
-		return float64(val), nil
-	case int64:
-		return float64(val), nil
-	default:
-		return 0, fmt.Errorf("unsupported type: %T", v)
-	}
 }
 
 // checkAAboveB 检查A是否在B之上
@@ -1504,4 +1443,113 @@ func CalculateCorrelation(dataA, dataB []float64) float64 {
 	}
 
 	return numerator / denominator
+}
+
+// formatPriceWithDynamicPrecision 根据价格区间动态选择精度
+// 这样可以完美支持从超低价 meme coin (< 0.0001) 到 BTC/ETH 的所有币种
+func formatPriceWithDynamicPrecision(price float64) string {
+	switch {
+	case price < 0.0001:
+		// 超低价 meme coin: 1000SATS, 1000WHY, DOGS
+		// 0.00002070 → "0.00002070" (8位小数)
+		return fmt.Sprintf("%.8f", price)
+	case price < 0.001:
+		// 低价 meme coin: NEIRO, HMSTR, HOT, NOT
+		// 0.00015060 → "0.000151" (6位小数)
+		return fmt.Sprintf("%.6f", price)
+	case price < 0.01:
+		// 中低价币: PEPE, SHIB, MEME
+		// 0.00556800 → "0.005568" (6位小数)
+		return fmt.Sprintf("%.6f", price)
+	case price < 1.0:
+		// 低价币: ASTER, DOGE, ADA, TRX
+		// 0.9954 → "0.9954" (4位小数)
+		return fmt.Sprintf("%.4f", price)
+	case price < 100:
+		// 中价币: SOL, AVAX, LINK, MATIC
+		// 23.4567 → "23.4567" (4位小数)
+		return fmt.Sprintf("%.4f", price)
+	default:
+		// 高价币: BTC, ETH (节省 Token)
+		// 45678.9123 → "45678.91" (2位小数)
+		return fmt.Sprintf("%.2f", price)
+	}
+}
+
+// formatFloatSlice 格式化float64切片为字符串（使用动态精度）
+func formatFloatSlice(values []float64) string {
+	strValues := make([]string, len(values))
+	for i, v := range values {
+		strValues[i] = formatPriceWithDynamicPrecision(v)
+	}
+	return "[" + strings.Join(strValues, ", ") + "]"
+}
+
+// Normalize 标准化symbol,确保是USDT交易对
+func Normalize(symbol string) string {
+	symbol = strings.ToUpper(symbol)
+	if strings.HasSuffix(symbol, "USDT") {
+		return symbol
+	}
+	return symbol + "USDT"
+}
+
+// parseFloat 解析float值
+func parseFloat(v interface{}) (float64, error) {
+	switch val := v.(type) {
+	case string:
+		return strconv.ParseFloat(val, 64)
+	case float64:
+		return val, nil
+	case int:
+		return float64(val), nil
+	case int64:
+		return float64(val), nil
+	default:
+		return 0, fmt.Errorf("unsupported type: %T", v)
+	}
+}
+
+// isStaleData detects stale data (consecutive price freeze)
+// Fix DOGEUSDT-style issue: consecutive N periods with completely unchanged prices indicate data source anomaly
+func isStaleData(klines []Kline, symbol string) bool {
+	if len(klines) < 5 {
+		return false // Insufficient data to determine
+	}
+
+	// Detection threshold: 5 consecutive 3-minute periods with unchanged price (15 minutes without fluctuation)
+	const stalePriceThreshold = 5
+	const priceTolerancePct = 0.0001 // 0.01% fluctuation tolerance (avoid false positives)
+
+	// Take the last stalePriceThreshold K-lines
+	recentKlines := klines[len(klines)-stalePriceThreshold:]
+	firstPrice := recentKlines[0].Close
+
+	// Check if all prices are within tolerance
+	for i := 1; i < len(recentKlines); i++ {
+		priceDiff := math.Abs(recentKlines[i].Close-firstPrice) / firstPrice
+		if priceDiff > priceTolerancePct {
+			return false // Price fluctuation exists, data is normal
+		}
+	}
+
+	// Additional check: MACD and volume
+	// If price is unchanged but MACD/volume shows normal fluctuation, it might be a real market situation (extremely low volatility)
+	// Check if volume is also 0 (data completely frozen)
+	allVolumeZero := true
+	for _, k := range recentKlines {
+		if k.Volume > 0 {
+			allVolumeZero = false
+			break
+		}
+	}
+
+	if allVolumeZero {
+		log.Printf("⚠️  %s stale data confirmed: price freeze + zero volume", symbol)
+		return true
+	}
+
+	// Price frozen but has volume: might be extremely low volatility market, allow but log warning
+	log.Printf("⚠️  %s detected extreme price stability (no fluctuation for %d consecutive periods), but volume is normal", symbol, stalePriceThreshold)
+	return false
 }

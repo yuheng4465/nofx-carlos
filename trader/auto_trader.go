@@ -187,7 +187,7 @@ func NewAutoTrader(config AutoTraderConfig, database interface{}, userID string)
 	switch config.Exchange {
 	case "binance":
 		log.Printf("🏦 [%s] 使用币安合约交易", config.Name)
-		trader = NewFuturesTrader(config.BinanceAPIKey, config.BinanceSecretKey)
+		trader = NewFuturesTrader(config.BinanceAPIKey, config.BinanceSecretKey, userID)
 	case "hyperliquid":
 		log.Printf("🏦 [%s] 使用Hyperliquid交易", config.Name)
 		trader, err = NewHyperliquidTrader(config.HyperliquidPrivateKey, config.HyperliquidWalletAddr, config.HyperliquidTestnet)
@@ -254,10 +254,15 @@ func NewAutoTrader(config AutoTraderConfig, database interface{}, userID string)
 // Run 运行自动交易主循环
 func (at *AutoTrader) Run() error {
 	at.isRunning = true
+	at.stopMonitorCh = make(chan struct{})
+	at.startTime = time.Now()
+
 	log.Println("🚀 AI驱动自动交易系统启动")
 	log.Printf("💰 初始余额: %.2f USDT", at.initialBalance)
 	log.Printf("⚙️  扫描间隔: %v", at.config.ScanInterval)
 	log.Println("🤖 AI将全权决定杠杆、仓位大小、止损止盈等参数")
+	at.monitorWg.Add(1)
+	defer at.monitorWg.Done()
 
 	// 启动回撤监控
 	// at.startDrawdownMonitor()
@@ -276,6 +281,9 @@ func (at *AutoTrader) Run() error {
 			if err := at.runCycle(); err != nil {
 				log.Printf("❌ 执行失败: %v", err)
 			}
+		case <-at.stopMonitorCh:
+			log.Printf("[%s] ⏹ 收到停止信号，退出自动交易主循环", at.name)
+			return nil
 		}
 	}
 
@@ -474,6 +482,13 @@ func (at *AutoTrader) runCycle() error {
 	// 5. 调用AI获取完整决策
 	log.Printf("🤖 正在请求AI分析并决策... [模板: %s]", at.systemPromptTemplate)
 	decision, err := decision.GetFullDecisionWithCustomPrompt(ctx, at.mcpClient, at.customPrompt, at.overrideBasePrompt, at.systemPromptTemplate)
+
+	if decision != nil && decision.AIRequestDurationMs > 0 {
+		record.AIRequestDurationMs = decision.AIRequestDurationMs
+		log.Printf("⏱️ AI调用耗时: %.2f 秒", float64(record.AIRequestDurationMs)/1000)
+		record.ExecutionLog = append(record.ExecutionLog,
+			fmt.Sprintf("AI调用耗时: %d ms", record.AIRequestDurationMs))
+	}
 
 	// 即使有错误，也保存思维链、决策和输入prompt（用于debug）
 	if decision != nil {
@@ -693,6 +708,9 @@ func (at *AutoTrader) buildTradingContext() (*decision.Context, error) {
 
 		totalMarginUsed += marginUsed
 
+		// 计算盈亏百分比（基于保证金，考虑杠杆）
+		pnlPct = calculatePnLPercentage(unrealizedPnl, marginUsed)
+
 		// 跟踪持仓首次出现时间
 		posKey := symbol + "_" + side
 		currentPositionKeys[posKey] = true
@@ -701,6 +719,11 @@ func (at *AutoTrader) buildTradingContext() (*decision.Context, error) {
 			at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
 		}
 		updateTime := at.positionFirstSeenTime[posKey]
+
+		// 获取该持仓的历史最高收益率
+		at.peakPnLCacheMutex.RLock()
+		peakPnlPct := at.peakPnLCache[symbol]
+		at.peakPnLCacheMutex.RUnlock()
 
 		positionInfos = append(positionInfos, decision.PositionInfo{
 			Symbol:           symbol,
@@ -711,6 +734,7 @@ func (at *AutoTrader) buildTradingContext() (*decision.Context, error) {
 			Leverage:         leverage,
 			UnrealizedPnL:    unrealizedPnl,
 			UnrealizedPnLPct: pnlPct,
+			PeakPnLPct:       peakPnlPct,
 			LiquidationPrice: liquidationPrice,
 			MarginUsed:       marginUsed,
 			UpdateTime:       updateTime,
@@ -1271,6 +1295,37 @@ func (at *AutoTrader) executePartialCloseWithRecord(decision *decision.Decision,
 	closeQuantity := totalQuantity * (decision.ClosePercentage / 100.0)
 	actionRecord.Quantity = closeQuantity
 
+	// ✅ Layer 2: 最小仓位检查（防止产生小额剩余）
+	markPrice, ok := targetPosition["markPrice"].(float64)
+	if !ok || markPrice <= 0 {
+		return fmt.Errorf("无法解析当前价格，无法执行最小仓位检查")
+	}
+
+	currentPositionValue := totalQuantity * markPrice
+	remainingQuantity := totalQuantity - closeQuantity
+	remainingValue := remainingQuantity * markPrice
+
+	const MIN_POSITION_VALUE = 10.0 // 最小持仓价值 10 USDT（對齊交易所底线，小仓位建议直接全平）
+
+	if remainingValue > 0 && remainingValue <= MIN_POSITION_VALUE {
+		log.Printf("⚠️ 检测到 partial_close 后剩余仓位 %.2f USDT < %.0f USDT",
+			remainingValue, MIN_POSITION_VALUE)
+		log.Printf("  → 当前仓位价值: %.2f USDT, 平仓 %.1f%%, 剩余: %.2f USDT",
+			currentPositionValue, decision.ClosePercentage, remainingValue)
+		log.Printf("  → 自动修正为全部平仓，避免产生无法平仓的小额剩余")
+
+		// 🔄 自动修正为全部平仓
+		if positionSide == "LONG" {
+			decision.Action = "close_long"
+			log.Printf("  ✓ 已修正为: close_long")
+			return at.executeCloseLongWithRecord(decision, actionRecord)
+		} else {
+			decision.Action = "close_short"
+			log.Printf("  ✓ 已修正为: close_short")
+			return at.executeCloseShortWithRecord(decision, actionRecord)
+		}
+	}
+
 	// 执行平仓
 	var order map[string]interface{}
 	if positionSide == "LONG" {
@@ -1288,9 +1343,34 @@ func (at *AutoTrader) executePartialCloseWithRecord(decision *decision.Decision,
 		actionRecord.OrderID = orderID
 	}
 
-	remainingQuantity := totalQuantity - closeQuantity
 	log.Printf("  ✓ 部分平仓成功: 平仓 %.4f (%.1f%%), 剩余 %.4f",
 		closeQuantity, decision.ClosePercentage, remainingQuantity)
+
+	// ✅ Step 4: 恢复止盈止损（防止剩余仓位裸奔）
+	// 重要：币安等交易所在部分平仓后会自动取消原有的 TP/SL 订单（因为数量不匹配）
+	// 如果 AI 提供了新的止损止盈价格，则为剩余仓位重新设置保护
+	if decision.NewStopLoss > 0 {
+		log.Printf("  → 为剩余仓位 %.4f 恢复止损单: %.2f", remainingQuantity, decision.NewStopLoss)
+		err = at.trader.SetStopLoss(decision.Symbol, positionSide, remainingQuantity, decision.NewStopLoss)
+		if err != nil {
+			log.Printf("  ⚠️ 恢复止损失败: %v（不影响平仓结果）", err)
+		}
+	}
+
+	if decision.NewTakeProfit > 0 {
+		log.Printf("  → 为剩余仓位 %.4f 恢复止盈单: %.2f", remainingQuantity, decision.NewTakeProfit)
+		err = at.trader.SetTakeProfit(decision.Symbol, positionSide, remainingQuantity, decision.NewTakeProfit)
+		if err != nil {
+			log.Printf("  ⚠️ 恢复止盈失败: %v（不影响平仓结果）", err)
+		}
+	}
+
+	// 如果 AI 没有提供新的止盈止损，记录警告
+	if decision.NewStopLoss <= 0 && decision.NewTakeProfit <= 0 {
+		log.Printf("  ⚠️⚠️⚠️ 警告: 部分平仓后AI未提供新的止盈止损价格")
+		log.Printf("  → 剩余仓位 %.4f (价值 %.2f USDT) 目前没有止盈止损保护", remainingQuantity, remainingValue)
+		log.Printf("  → 建议: 在 partial_close 决策中包含 new_stop_loss 和 new_take_profit 字段")
+	}
 
 	return nil
 }
@@ -1475,11 +1555,7 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 		marginUsed := (quantity * markPrice) / float64(leverage)
 
 		// 计算盈亏百分比（基于保证金）
-		// 收益率 = 未实现盈亏 / 保证金 × 100%
-		pnlPct := 0.0
-		if marginUsed > 0 {
-			pnlPct = (unrealizedPnl / marginUsed) * 100
-		}
+		pnlPct := calculatePnLPercentage(unrealizedPnl, marginUsed)
 
 		result = append(result, map[string]interface{}{
 			"symbol":             symbol,
@@ -1496,6 +1572,15 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 	}
 
 	return result, nil
+}
+
+// calculatePnLPercentage 计算盈亏百分比（基于保证金，自动考虑杠杆）
+// 收益率 = 未实现盈亏 / 保证金 × 100%
+func calculatePnLPercentage(unrealizedPnl, marginUsed float64) float64 {
+	if marginUsed > 0 {
+		return (unrealizedPnl / marginUsed) * 100
+	}
+	return 0.0
 }
 
 // sortDecisionsByPriority 对决策排序：先平仓，再开仓，最后hold/wait

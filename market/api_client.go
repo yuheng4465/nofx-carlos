@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"nofx/hook"
 	"strconv"
 	"time"
 )
@@ -32,11 +33,19 @@ func NewAPIClient() *APIClient {
 		Proxy: http.ProxyURL(proxyURL),
 	}
 
+	client := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}
+
+	hookRes := hook.HookExec[hook.SetHttpClientResult](hook.SET_HTTP_CLIENT, client)
+	if hookRes != nil && hookRes.Error() == nil {
+		log.Printf("使用Hook设置的HTTP客户端")
+		client = hookRes.GetResult()
+	}
+
 	return &APIClient{
-		client: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: transport,
-		},
+		client: client,
 	}
 }
 
@@ -115,6 +124,15 @@ func (c *APIClient) getOpenInterestHist(symbol string, period string, limit int)
 
 // getFundingRate 获取资金费率
 func (c *APIClient) getFundingRate(symbol string) (float64, error) {
+	// 检查缓存（有效期 1 小时）
+	// Funding Rate 每 8 小时才更新，1 小时缓存非常合理
+	if cached, ok := fundingRateMap.Load(symbol); ok {
+		cache := cached.(*FundingRateCache)
+		if time.Since(cache.UpdatedAt) < frCacheTTL {
+			// 缓存命中，直接返回
+			return cache.Rate, nil
+		}
+	}
 	api_url := fmt.Sprintf("%s/fapi/v1/premiumIndex?symbol=%s", baseURL, symbol)
 
 	resp, err := c.client.Get(api_url)
@@ -143,6 +161,13 @@ func (c *APIClient) getFundingRate(symbol string) (float64, error) {
 	}
 
 	rate, _ := strconv.ParseFloat(result.LastFundingRate, 64)
+
+	// 更新缓存
+	fundingRateMap.Store(symbol, &FundingRateCache{
+		Rate:      rate,
+		UpdatedAt: time.Now(),
+	})
+
 	return rate, nil
 }
 
@@ -252,6 +277,7 @@ func (c *APIClient) GetKlines(symbol, interval string, limit int) ([]Kline, erro
 	var klineResponses []KlineResponse
 	err = json.Unmarshal(body, &klineResponses)
 	if err != nil {
+		log.Printf("获取K线数据失败,响应内容: %s", string(body))
 		return nil, err
 	}
 

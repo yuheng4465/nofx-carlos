@@ -44,6 +44,8 @@ type IntradayData struct {
 	MACDValues  []float64
 	RSI7Values  []float64
 	RSI14Values []float64
+	Volume      []float64
+	ATR14       float64
 	BSVOL       []*VolumeAnalysis // 主动买卖量
 	EMA         []*EMAData        // EMA
 	MACD        []*MACDData       // MACD
@@ -122,6 +124,7 @@ type MidTermSignalsData1h struct {
 	VOL  *Signal // Vol
 	VWAP *Signal // VWAP
 	WMA  *Signal // WMA
+
 }
 
 // LongerTermData 长期数据(4小时时间框架)
