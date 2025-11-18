@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"nofx/hook"
 	"strconv"
 	"time"
 )
@@ -23,7 +22,7 @@ type APIClient struct {
 
 func NewAPIClient() *APIClient {
 	// 设置代理地址（例如：127.0.0.1:1080）
-	proxyURL, err := url.Parse("http://127.0.0.1:8800")
+	proxyURL, err := url.Parse("http://127.0.0.1:8801")
 	if err != nil {
 		log.Fatalf("解析代理地址失败: %v", err)
 	}
@@ -38,11 +37,11 @@ func NewAPIClient() *APIClient {
 		Transport: transport,
 	}
 
-	hookRes := hook.HookExec[hook.SetHttpClientResult](hook.SET_HTTP_CLIENT, client)
-	if hookRes != nil && hookRes.Error() == nil {
-		log.Printf("使用Hook设置的HTTP客户端")
-		client = hookRes.GetResult()
-	}
+	// hookRes := hook.HookExec[hook.SetHttpClientResult](hook.SET_HTTP_CLIENT, client)
+	// if hookRes != nil && hookRes.Error() == nil {
+	// 	log.Printf("使用Hook设置的HTTP客户端")
+	// 	client = hookRes.GetResult()
+	// }
 
 	return &APIClient{
 		client: client,

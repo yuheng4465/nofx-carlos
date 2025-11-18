@@ -118,40 +118,35 @@ func getBSVOLDataString(volumeAnalysis []*VolumeAnalysis, period int) string {
 // }
 
 // 获取策略所需数据
-func getBSVOLCases(volumeAnalysis []*VolumeAnalysis, priceChanges []Kline) *Cases {
+func getBSVOLCases(volumeAnalysis []*VolumeAnalysis) *StrategyData {
 	if len(volumeAnalysis) < 2 {
-		return &Cases{}
+		return &StrategyData{}
 	}
 
 	current := volumeAnalysis[len(volumeAnalysis)-1]
 	prev := volumeAnalysis[len(volumeAnalysis)-2]
 
-	// 计算价格变化
-	priceChange := 0.0
-	if len(priceChanges) >= 2 {
-		currentPrice := priceChanges[len(priceChanges)-1].Close
-		prevPrice := priceChanges[len(priceChanges)-2].Close
-		priceChange = (currentPrice - prevPrice) / prevPrice * 100
-	}
-
-	casesData := &Cases{}
+	casesData := &StrategyData{}
 	casesData.Name = TargetMACD
 	casesData.Metrics = map[string]interface{}{
-		"priceChange":             priceChange,
+		"currentPrice":            current.Price,
+		"prevPrice":               prev.Price,
 		"currentNetVolume":        current.NetVolume,
+		"prevNetVolume":           prev.NetVolume,
 		"currentVolumeRatio":      current.VolumeRatio,
 		"currentTotalVolume":      current.TotalVolume,
 		"prevTotalVolume":         prev.TotalVolume,
-		"prevNetVolume":           prev.NetVolume,
 		"currentActiveSellVolume": current.ActiveSellVolume,
 		"currentActiveBuyVolume":  current.ActiveBuyVolume,
+		"prevActiveSellVolume":    prev.ActiveSellVolume,
+		"prevActiveBuyVolume":     prev.ActiveBuyVolume,
 	}
 
 	return casesData
 }
 
 // generateBSVolumeSignal 生成主动买卖量交易信号
-func generateBSVolumeSignal(volumeAnalysis []*VolumeAnalysis, priceChanges []Kline) *Signal {
+func generateBSVolumeSignal(volumeAnalysis []*VolumeAnalysis) *Signal {
 	if len(volumeAnalysis) < 2 {
 		return &Signal{Target: TargetBSVOL, SignalType: "none", Side: SideNone, Period: Period3m, Confidence: 0, Message: "数据不足"}
 	}
@@ -161,11 +156,9 @@ func generateBSVolumeSignal(volumeAnalysis []*VolumeAnalysis, priceChanges []Kli
 
 	// 计算价格变化
 	priceChange := 0.0
-	if len(priceChanges) >= 2 {
-		currentPrice := priceChanges[len(priceChanges)-1].Close
-		prevPrice := priceChanges[len(priceChanges)-2].Close
-		priceChange = (currentPrice - prevPrice) / prevPrice * 100
-	}
+	currentPrice := current.Price
+	prevPrice := prev.Price
+	priceChange = (currentPrice - prevPrice) / prevPrice * 100
 
 	// 信号1: 量价齐升（健康上涨）
 	if priceChange > 0.3 && current.NetVolume > 0 && current.VolumeRatio > 1.5 {
@@ -310,7 +303,7 @@ func getBSVolSignal(simulatedTrades []TradeDetail, klines []Kline) *Signal {
 	volumeAnalysis := analyzeTradeFlow(simulatedTrades, 30)
 
 	// 生成交易信号
-	signal := generateBSVolumeSignal(volumeAnalysis, klines)
+	signal := generateBSVolumeSignal(volumeAnalysis)
 
 	return signal
 }

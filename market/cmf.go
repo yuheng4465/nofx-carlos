@@ -60,6 +60,45 @@ func calculateCMF(klines []Kline, period int) []*CMFData {
 	return cmfList
 }
 
+func calculateCMFList(klines []Kline, period int) []*float64 {
+	var cmfList []*float64
+	var moneyFlowVolumes []float64
+	var volumes []float64
+
+	for i, kline := range klines {
+		// 解析K线数据
+		high := kline.High
+		low := kline.Low
+		close := kline.Close
+		volume := kline.Volume
+
+		// 计算资金流乘数
+		moneyFlowMultiplier := ((close - low) - (high - close)) / (high - low)
+		// 计算资金流体积
+		moneyFlowVolume := moneyFlowMultiplier * volume
+
+		moneyFlowVolumes = append(moneyFlowVolumes, moneyFlowVolume)
+		volumes = append(volumes, volume)
+
+		// 当积累足够的数据点时，开始计算CMF
+		if i >= period-1 {
+			sumMoneyFlowVolume := 0.0
+			sumVolume := 0.0
+
+			// 累计过去 'period' 期的数据
+			for j := 0; j < period; j++ {
+				sumMoneyFlowVolume += moneyFlowVolumes[i-j]
+				sumVolume += volumes[i-j]
+			}
+
+			cmfValue := sumMoneyFlowVolume / sumVolume
+
+			cmfList = append(cmfList, &cmfValue)
+		}
+	}
+	return cmfList
+}
+
 // 转换为字符串
 func getCMFDataString(cmfData []*CMFData, period int) string {
 	var data []float64

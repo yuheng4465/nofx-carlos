@@ -129,9 +129,9 @@ func getMACDDataString(macdData []*MACDData, period int) string {
 }
 
 // 获取策略所需数据
-func getMACDCases(macdData []*MACDData, lookback int) *Cases {
+func getMACDCases(macdData []*MACDData, lookback int) *StrategyData {
 	if len(macdData) < lookback+1 {
-		return &Cases{}
+		return &StrategyData{}
 	}
 
 	current := macdData[len(macdData)-1]
@@ -150,7 +150,7 @@ func getMACDCases(macdData []*MACDData, lookback int) *Cases {
 	recentPriceLow, prevPriceLow, recentMACDLow, prevMACDLow := detectMACDBullishDivergenceData(macdData, 20)
 	recentPriceHigh, prevPriceHigh, recentMACDHigh, prevMACDHigh := detectMACDBearishDivergenceData(macdData, 20)
 
-	casesData := &Cases{}
+	casesData := &StrategyData{}
 	casesData.Name = TargetMACD
 	casesData.Metrics = map[string]interface{}{
 		"currentMACD":       currentMACD,

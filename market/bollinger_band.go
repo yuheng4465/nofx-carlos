@@ -3,6 +3,8 @@ package market
 import (
 	"fmt"
 	"math"
+
+	"github.com/markcheno/go-talib"
 )
 
 // BollingerBandData 存储布林带数据点
@@ -19,7 +21,15 @@ type BollingerBandData struct {
 	PercentB   float64 // %b指标，表示价格在布林带中的位置
 }
 
-// calculateBollingerBands 计算布林带
+// calculateBollingerBands 计算布林带指标数据
+//
+// 参数:
+//   - klines: K线数据数组，用于计算布林带
+//   - period: 计算周期，通常为20
+//   - multiplier: 标准差倍数，通常为2
+//
+// 返回值:
+//   - []*BollingerBandData: 包含布林带各项指标的数组
 func calculateBollingerBands(klines []Kline, period int, multiplier float64) []*BollingerBandData {
 	var bbData []*BollingerBandData
 	var closes []float64
@@ -29,7 +39,7 @@ func calculateBollingerBands(klines []Kline, period int, multiplier float64) []*
 		closes = append(closes, closePrice)
 
 		if i >= period-1 {
-			// 计算中轨
+			// 计算中轨（移动平均线）
 			sum := 0.0
 			for j := 0; j < period; j++ {
 				sum += closes[i-j]
@@ -48,9 +58,21 @@ func calculateBollingerBands(klines []Kline, period int, multiplier float64) []*
 			upperBand := middleBand + (stdDev * multiplier)
 			lowerBand := middleBand - (stdDev * multiplier)
 
-			// 计算带宽和 %b
-			bandWidth := (upperBand - lowerBand) / middleBand
-			percentB := (closePrice - lowerBand) / (upperBand - lowerBand)
+			// 计算带宽和 %b，增加除零检查
+			var bandWidth float64
+			if middleBand != 0 {
+				bandWidth = (upperBand - lowerBand) / middleBand
+			} else {
+				bandWidth = 0
+			}
+
+			var percentB float64
+			bandDiff := upperBand - lowerBand
+			if bandDiff != 0 {
+				percentB = (closePrice - lowerBand) / bandDiff
+			} else {
+				percentB = 0
+			}
 
 			bbData = append(bbData, &BollingerBandData{
 				OpenTime:   kline.OpenTime,
@@ -64,6 +86,18 @@ func calculateBollingerBands(klines []Kline, period int, multiplier float64) []*
 		}
 	}
 	return bbData
+}
+
+// calculateBollingerBands 计算布林带(使用talib库计算)
+func calculateBollingerBandsList(klines []Kline, period int) ([]float64, []float64, []float64) {
+	var closes []float64
+	for _, kline := range klines {
+		closePrice := kline.Close
+		closes = append(closes, closePrice)
+	}
+	outRealUpperBand, outRealMiddleBand, outRealLowerBand := talib.BBands(closes, period, 2, 2, 0)
+
+	return outRealUpperBand, outRealMiddleBand, outRealLowerBand
 }
 
 // 转换为字符串
@@ -87,45 +121,6 @@ func getBOLLDataString(bbData []*BollingerBandData, period int) string {
 	lowerBandStr := formatFloatSlice(lowerBand)
 
 	return fmt.Sprintf("middleBand: %s , upperBand: %s , lowerBand: %s", middleBandStr, upperBandStr, lowerBandStr)
-}
-
-// 计算布林带带宽
-func calculateBollingerWidth(bbData []*BollingerBandData) float64 {
-	current := bbData[len(bbData)-1]
-	return (current.UpperBand - current.LowerBand) / current.MiddleBand * 100
-}
-
-// 获取策略所需数据
-func getBollingerCases(bbData []*BollingerBandData, lookback int) *Cases {
-	if len(bbData) < lookback+1 {
-		return &Cases{}
-	}
-	current := bbData[len(bbData)-1]
-	prev := bbData[len(bbData)-2]
-
-	// 带宽
-	avgBandWidth := 0.0
-	for i := len(bbData) - lookback; i < len(bbData); i++ {
-		avgBandWidth += bbData[i].BandWidth
-	}
-	avgBandWidth /= float64(lookback)
-
-	casesData := &Cases{}
-	casesData.Name = TargetMACD
-	casesData.Metrics = map[string]interface{}{
-		"currentBandWidth":  current.BandWidth,
-		"avgBandWidth":      avgBandWidth,
-		"prevPrice":         prev.ClosePrice,
-		"currentPrice":      current.ClosePrice,
-		"prevUpperBand":     prev.UpperBand,
-		"currentUpperBand":  current.UpperBand,
-		"prevLowerBand":     prev.LowerBand,
-		"currentLowerBand":  current.LowerBand,
-		"currentMiddleBand": current.MiddleBand,
-		"prevMiddleBand":    prev.MiddleBand,
-	}
-
-	return casesData
 }
 
 // analyzeBollingerSignal 分析布林带数据，生成交易信号

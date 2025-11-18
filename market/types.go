@@ -17,24 +17,7 @@ type Data struct {
 	MidTermSeries1h   *MidTermData1h    // 1小时数据 - 中期趋势
 	LongerTermContext *LongerTermData   // 4小时数据 - 长期趋势
 	longerTermData1d  *LongerTermData1d // 1天数据-长趋势
-	SignalList        []*Signal         // 所有初步决策
 	Signal            *Signal           // 最终决策
-}
-
-// OIData Open Interest数据
-type OIData struct {
-	Symbol       string  `json:"symbol"`
-	Timestamp    int64   `json:"timestamp"`
-	OpenInterest float64 `json:"openInterest"`
-	Price        float64 `json:"price"`
-}
-
-// OBVData 存储成交量数据点
-type OBVData struct {
-	OpenTime   int64
-	ClosePrice float64
-	Volume     float64
-	OBV        float64
 }
 
 // IntradayData 日内数据(3分钟间隔)
@@ -45,23 +28,19 @@ type IntradayData struct {
 	RSI7Values  []float64
 	RSI14Values []float64
 	Volume      []float64
-	ATR14       float64
+	ATR         []float64
 	BSVOL       []*VolumeAnalysis // 主动买卖量
-	EMA         []*EMAData        // EMA
-	MACD        []*MACDData       // MACD
-	RSI         []*RSIData        // RSI
-	VWAP        []*VWAPData       // VWAP
+	BOLL        []*BollingerBandData
+	CCI         []*CCIData
+	CMF         []*CMFData
+	OI          []*OIData // OI
+	OBV         []*OBVData
+	EMA         []*EMAData  // EMA
+	MACD        []*MACDData // MACD
+	RSI         []*RSIData  // RSI
+	VWAP        []*VWAPData // VWAP
 	FundingRate float64
-}
-
-// MidTermData1h 日内信号(3m)
-type IntradaySignalsData struct {
-	BSVOL       *Signal // BSVOL
-	EMA         *Signal // EMA
-	MACD        *Signal // MACD
-	RSI         *Signal // RSI
-	VWAP        *Signal // VWAP
-	FundingRate *Signal // 资金费率
+	WR          []*WRData // WR
 }
 
 // MidTermData15m 15分钟时间框架数据 - 短期趋势过滤
@@ -71,24 +50,19 @@ type MidTermData15m struct {
 	MACDValues  []float64
 	RSI7Values  []float64
 	RSI14Values []float64
+	Volume      []float64
+	ATR         []float64
 	BOLL        []*BollingerBandData // BOLL
-	OI          []*OIData            // OI
-	EMA         []*EMAData           // EMA
-	MACD        []*MACDData          // MACD
-	RSI         []*RSIData           // RSI
-	VOL         []*VolumeData        // VOL
-	VWAP        []*VWAPData          // VWAP
-}
-
-// MidTermData1h 15分钟信号
-type MidTermSignalsData15m struct {
-	BOLL *Signal // BOLL
-	EMA  *Signal // EMA
-	OI   *Signal // OI
-	MACD *Signal // MACD
-	RSI  *Signal // RSI
-	VOL  *Signal // VOL
-	VWAP *Signal // VWAP
+	CCI         []*CCIData
+	CMF         []*CMFData
+	OI          []*OIData // OI
+	OBV         []*OBVData
+	EMA         []*EMAData    // EMA
+	MACD        []*MACDData   // MACD
+	RSI         []*RSIData    // RSI
+	VOL         []*VolumeData // VOL
+	VWAP        []*VWAPData   // VWAP
+	WR          []*WRData     // WR
 }
 
 // MidTermData1h 1小时时间框架数据 - 中期趋势确认
@@ -98,40 +72,29 @@ type MidTermData1h struct {
 	MACDValues  []float64
 	RSI7Values  []float64
 	RSI14Values []float64
+	Volume      []float64
+	ATR         []float64
 	BOLL        []*BollingerBandData // 布林带序列
 	CMF         []*CMFData           // CMF
-	EMA         []*EMAData           // EMA
-	MACD        []*MACDData          // MACD
-	OBV         []*OBVData           // OBV
-	OI          []*OIData            // OI
-	RSI         []*RSIData           // RSI
-	TRIX        []*TRIXData          // TRIX
-	VOL         []*VolumeData        // Vol
-	VWAP        []*VWAPData          // VWAP
-	WMA         []*WMAData           // WMA
-}
-
-// MidTermData1h 1小时信号
-type MidTermSignalsData1h struct {
-	BOLL *Signal // 布林带序列
-	CMF  *Signal // CMF
-	EMA  *Signal // EMA
-	MACD *Signal // MACD
-	OBV  *Signal // OBV
-	OI   *Signal // OI
-	RSI  *Signal // RSI
-	TRIX *Signal // TRIX
-	VOL  *Signal // Vol
-	VWAP *Signal // VWAP
-	WMA  *Signal // WMA
-
+	CCI         []*CCIData
+	EMA         []*EMAData    // EMA
+	MACD        []*MACDData   // MACD
+	OBV         []*OBVData    // OBV
+	OI          []*OIData     // OI
+	RSI         []*RSIData    // RSI
+	TRIX        []*TRIXData   // TRIX
+	VOL         []*VolumeData // Vol
+	VWAP        []*VWAPData   // VWAP
+	WMA         []*WMAData    // WMA
+	WR          []*WRData     // WR
 }
 
 // LongerTermData 长期数据(4小时时间框架)
 type LongerTermData struct {
-	EMA20             float64 // EMA20
-	EMA50             float64 // EMA50
+	EMA20             []float64 // EMA20
+	EMA50             float64   // EMA50
 	MidPrices         []float64
+	Volume            []float64
 	ATR               []*ATRData           // ATR序列
 	AVL               []*AVLData           // AVL序列
 	BOLL              []*BollingerBandData // 布林带序列
@@ -154,32 +117,6 @@ type LongerTermData struct {
 	VOL               []*VolumeData        // Vol
 	WMA               []*WMAData           // WMA
 	WR                []*WRData            // WR
-}
-
-// 长周期信号(4h)
-type LongerTermSignalsData struct {
-	ATR               *Signal // ATR
-	AVL               *Signal // AVL
-	BOLL              *Signal // 布林带
-	CCI               *Signal // CCI
-	CMF               *Signal // CMF
-	DMI               *Signal // DMI
-	EMA               *Signal // EMA
-	EMV               *Signal // EMV
-	KDJ               *Signal // KDJ
-	MACD              *Signal // MACD
-	MFI               *Signal // MFI
-	MTM               *Signal // MTM
-	OBV               *Signal // OBV
-	OI                *Signal // OI
-	RSI               *Signal // RSI
-	SAR               *Signal // SAR
-	StochRSI          *Signal // StochRSI
-	SupportResistance *Signal // SupportResistance
-	TRIX              *Signal // TRIX
-	VOL               *Signal // Vol
-	WMA               *Signal // WMA
-	WR                *Signal // WR
 }
 
 // LongerTermData 长期数据(1天时间框架)
@@ -209,32 +146,6 @@ type LongerTermData1d struct {
 	VOL               []*VolumeData        // Vol
 	WMA               []*WMAData           // WMA
 	WR                []*WRData            // WR
-}
-
-// 长周期信号(1d)
-type LongerTermSignalsData1d struct {
-	ATR               *Signal // ATR
-	AVL               *Signal // AVL
-	BOLL              *Signal // 布林带
-	CCI               *Signal // CCI
-	CMF               *Signal // CMF
-	DMI               *Signal // DMI
-	EMA               *Signal // EMA
-	EMV               *Signal // EMV
-	KDJ               *Signal // KDJ
-	MACD              *Signal // MACD
-	MFI               *Signal // MFI
-	MTM               *Signal // MTM
-	OBV               *Signal // OBV
-	OI                *Signal // OI
-	RSI               *Signal // RSI
-	SAR               *Signal // SAR
-	StochRSI          *Signal // StochRSI
-	SupportResistance *Signal // SupportResistance
-	TRIX              *Signal // TRIX
-	VOL               *Signal // Vol
-	WMA               *Signal // WMA
-	WR                *Signal // WR
 }
 
 // Binance API 响应结构
@@ -386,37 +297,14 @@ const (
 
 // 分析信号
 type Signal struct {
-	Target     string    // 指标
-	Period     string    // 数据时间周期
-	SignalType string    // 信号类型
-	Side       string    // 多空方向：buy开多，sell开空，none无方向，waring警报
-	Confidence float64   // 信心
-	Message    string    // 消息
-	Strategy   *Strategy // 策略
-	CaseData   *Cases    // 策略执行数据
-}
-
-// MarketState 定义市场状态
-type MarketState string
-
-const (
-	TrendingBullish MarketState = "TrendingBullish" // 强劲上升趋势
-	TrendingBearish MarketState = "TrendingBearish" // 强劲下跌趋势
-	Ranging         MarketState = "Ranging"         // 震荡盘整
-	TrendingWeak    MarketState = "TrendingWeak"    // 弱势趋势
-)
-
-// MarketAnalysis 存储市场分析结果
-type MarketAnalysis struct {
-	Timestamp      int64
-	State          MarketState
-	Confidence     float64
-	ADX            float64
-	PlusDI         float64
-	MinusDI        float64
-	EMASlope       float64
-	BollingerWidth float64
-	Message        string
+	Target       string        // 指标
+	Period       string        // 数据时间周期
+	SignalType   string        // 信号类型
+	Side         string        // 多空方向：buy开多，sell开空，none无方向，waring警报
+	Confidence   float64       // 信心
+	Message      string        // 消息
+	Strategy     *Strategy     // 策略
+	StrategyData *StrategyData // 策略执行数据
 }
 
 // var config = Config{

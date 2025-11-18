@@ -2,6 +2,8 @@ package market
 
 import (
 	"math"
+
+	"github.com/markcheno/go-talib"
 )
 
 // ATRData 存储ATR数据点
@@ -54,6 +56,18 @@ func calculateATRData(klines []Kline, period int) []*ATRData {
 		}
 	}
 	return atrList
+}
+
+// calculateATR 计算平均真实波幅
+func calculateATRList(klines []Kline, period int) []float64 {
+	var closes, highs, lows []float64
+	for _, kline := range klines {
+		closePrice := kline.Close
+		closes = append(closes, closePrice)
+		highs = append(highs, kline.High)
+		lows = append(lows, kline.Low)
+	}
+	return talib.Atr(highs, lows, closes, period)
 }
 
 // 转换为字符串

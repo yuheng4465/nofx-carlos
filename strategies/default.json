@@ -1,768 +1,1072 @@
 {
     "name": "default",
     "version": 1.0,
-    "strategies": {
-        "MACD": [
-            {
-                "name": "MACD开多策略信号1",
-                "description": "金叉：MACD线从下向上穿过信号线(零轴上金叉,强烈开多信号)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.8,
-                "expression": "prevMACD <= prevMACDSignal && currentMACD > currentMACDSignal && currentMACD > 0",
-                "fields": [
-                    "prevMACD",
-                    "prevMACDSignal",
-                    "currentMACD",
-                    "currentMACDSignal"
-                ]
-            },
-            {
-                "name": "MACD开多策略信号2",
-                "description": "金叉: MACD线从下向上穿过信号线(零轴下金叉，潜在反弹机会，需谨慎)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "prevMACD <= prevMACDSignal && currentMACD > currentMACDSignal && currentMACD <= 0",
-                "fields": [
-                    "prevMACD",
-                    "prevMACDSignal",
-                    "currentMACD",
-                    "currentMACDSignal"
-                ]
-            },
-            {
-                "name": "MACD开空策略信号1",
-                "description": "死叉: MACD线从上向下穿过信号线(零轴下死叉,强烈开空信号)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.8,
-                "expression": "prevMACD >= prevMACDSignal && currentMACD < currentMACDSignal && currentMACD < 0",
-                "fields": [
-                    "prevMACD",
-                    "prevMACDSignal",
-                    "currentMACD",
-                    "currentMACDSignal"
-                ]
-            },
-            {
-                "name": "MACD开空策略信号2",
-                "description": "死叉: MACD线从上向下穿过信号线(零轴上死叉,可能回调，需谨慎)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.8,
-                "expression": "prevMACD >= prevMACDSignal && currentMACD < currentMACDSignal && currentMACD >= 0",
-                "fields": [
-                    "prevMACD",
-                    "prevMACDSignal",
-                    "currentMACD",
-                    "currentMACDSignal"
-                ]
-            },
-            {
-                "name": "MACD开多策略信号3",
-                "description": "零轴穿越(MACD上穿零轴！市场转多)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.7,
-                "expression": "prevMACD <= 0 && currentMACD > 0",
-                "fields": [
-                    "prevMACD",
-                    "currentMACD"
-                ]
-            },
-            {
-                "name": "MACD开空策略信号3",
-                "description": "零轴穿越(MACD下穿零轴！市场转空)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.7,
-                "expression": "prevMACD >= 0 && currentMACD < 0",
-                "fields": [
-                    "prevMACD",
-                    "currentMACD"
-                ]
-            },
-            {
-                "name": "MACD开多策略信号4",
-                "description": "柱状线动量分析，MACD柱状线向上加速",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "currentMACDHist > 0 && currentMACDHist > prevMACDHist",
-                "fields": [
-                    "currentMACDHist",
-                    "prevMACDHist"
-                ]
-            },
-            {
-                "name": "MACD开空策略信号4",
-                "description": "MACD柱状线向下加速，下跌动量增强",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.6,
-                "expression": "currentMACDHist < 0 && currentMACDHist < prevMACDHist",
-                "fields": [
-                    "currentMACDHist",
-                    "prevMACDHist"
-                ]
-            },
-            {
-                "name": "MACD开多策略信号5",
-                "description": "底背离",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "recentPriceLow < prevPriceLow && recentMACDLow > prevMACDLow",
-                "fields": [
-                    "recentPriceLow",
-                    "prevPriceLow",
-                    "recentMACDLow",
-                    "prevMACDLow"
-                ]
-            },
-            {
-                "name": "MACD开空策略信号5",
-                "description": "顶背离",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.6,
-                "expression": "recentPriceHigh > prevPriceHigh && recentMACDHigh < prevMACDHigh",
-                "fields": [
-                    "recentPriceHigh",
-                    "prevPriceHigh",
-                    "recentMACDHigh",
-                    "prevMACDHigh"
-                ]
-            }
-        ],
-        "EMA": [
-            {
-                "name": "EMA20开多策略信号1",
-                "description": "价格穿越EMA20(从下方上穿EMA20)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.7,
-                "expression": "prevPrice < prevEMA20 && currentPrice > currentEMA20",
-                "fields": [
-                    "prevPrice",
-                    "prevEMA20",
-                    "currentPrice",
-                    "currentEMA20"
-                ]
-            },
-            {
-                "name": "EMA20开空策略信号1",
-                "description": "价格穿越EMA20(从上下穿EMA20)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.7,
-                "expression": "prevPrice > prevEMA20 && currentPrice < currentEMA20",
-                "fields": [
-                    "prevPrice",
-                    "prevEMA20",
-                    "currentPrice",
-                    "currentEMA20"
-                ]
-            },
-            {
-                "name": "EMA20开多策略信号2",
-                "description": "EMA20支撑作用(价格在上升的EMA20处获得支撑)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.8,
-                "expression": "currentPrice > currentEMA20 && (currentPrice - currentEMA20)/currentEMA20 < 0.01 && currentEMASlope > 0",
-                "fields": [
-                    "currentPrice",
-                    "currentEMA20",
-                    "currentEMASlope"
-                ]
-            },
-            {
-                "name": "EMA20开多策略信号3",
-                "description": "EMA20支撑作用(价格在EMA20支撑附近)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "currentPrice > currentEMA20 && (currentPrice - currentEMA20)/currentEMA20 >= 0.01 && currentEMASlope <= 0",
-                "fields": [
-                    "currentPrice",
-                    "currentEMA20",
-                    "currentEMASlope"
-                ]
-            },
-            {
-                "name": "EMA20开空策略信号2",
-                "description": "EMA20阻力作用(价格在下降的EMA20处受到阻力)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.8,
-                "expression": "prevPrice < prevEMA20 && (currentEMA20 - currentPrice)/currentEMA20 < 0.01 && currentEMASlope < 0",
-                "fields": [
-                    "prevPrice",
-                    "prevEMA20",
-                    "currentEMA20",
-                    "currentPrice",
-                    "currentEMASlope"
-                ]
-            },
-            {
-                "name": "EMA20开空策略信号3",
-                "description": "EMA20阻力作用(价格在EMA20阻力附近)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.6,
-                "expression": "prevPrice < prevEMA20 && (currentEMA20 - currentPrice)/currentEMA20 >= 0.01 && currentEMASlope >= 0",
-                "fields": [
-                    "prevPrice",
-                    "prevEMA20",
-                    "currentEMA20",
-                    "currentPrice",
-                    "currentEMASlope"
-                ]
-            },
-            {
-                "name": "EMA20开多策略信号4",
-                "description": "价格在EMA20上方且EMA斜率向上",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "currentPrice > currentEMA20 && currentEMASlope > 0",
-                "fields": [
-                    "currentEMA20",
-                    "currentPrice",
-                    "currentEMASlope"
-                ]
-            },
-            {
-                "name": "EMA20开空策略信号4",
-                "description": "价格在EMA20下方且EMA斜率向下",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.6,
-                "expression": "currentPrice < currentEMA20 && currentEMASlope < 0",
-                "fields": [
-                    "currentEMA20",
-                    "currentPrice",
-                    "currentEMASlope"
-                ]
-            }
-        ],
-        "RSI": [
-            {
-                "name": "RSI开多策略信号1",
-                "description": "从下方上穿30线 (超卖反弹)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.7,
-                "expression": "prevRSI < 30 && currentRSI >= 30",
-                "fields": [
-                    "prevRSI",
-                    "currentRSI"
-                ]
-            },
-            {
-                "name": "RSI开空策略信号1",
-                "description": "从上下穿70线 (超买回落)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.7,
-                "expression": "prevRSI > 70 && currentRSI < 70",
-                "fields": [
-                    "prevRSI",
-                    "currentRSI"
-                ]
-            },
-            {
-                "name": "RSI开多策略信号2",
-                "description": "在强势区域上穿50",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "currentRSI >= 50 && currentRSI < 80 && prevRSI < 50",
-                "fields": [
-                    "prevRSI",
-                    "currentRSI"
-                ]
-            },
-            {
-                "name": "RSI开空策略信号2",
-                "description": "在弱势区域下穿50",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.6,
-                "expression": "currentRSI > 20 && currentRSI <= 50 && prevRSI > 50",
-                "fields": [
-                    "prevRSI",
-                    "currentRSI"
-                ]
-            },
-            {
-                "name": "RSI开多策略信号3",
-                "description": "多背离 (价格新低，RSI更高低点)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.9,
-                "expression": "recentPriceLow < prevPriceLow && recentRSILow > prevRSILow",
-                "fields": [
-                    "recentPriceLow",
-                    "prevPriceLow",
-                    "recentRSILow",
-                    "prevRSILow"
-                ]
-            },
-            {
-                "name": "RSI开空策略信号3",
-                "description": "空背离 (价格新高，RSI更低高点)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.9,
-                "expression": "recentPriceHigh > prevPriceHigh && recentRSIHigh < prevRSIHigh",
-                "fields": [
-                    "recentPriceHigh",
-                    "prevPriceHigh",
-                    "recentRSIHigh",
-                    "prevRSIHigh"
-                ]
-            },
-            {
-                "name": "RSI开多策略信号4",
-                "description": "RSI处于超买区，警惕回调",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.5,
-                "expression": "currentRSI > 70",
-                "fields": [
-                    "currentRSI"
-                ]
-            },
-            {
-                "name": "RSI开空策略信号4",
-                "description": "RSI处于超卖区，警惕反弹",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.5,
-                "expression": "currentRSI < 30",
-                "fields": [
-                    "currentRSI"
-                ]
-            }
-        ],
-        "VOL": [
-            {
-                "name": "VOL开多策略信号1",
-                "description": "放量突破(价格显著上涨)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.8,
-                "expression": "currentVolumeRatio > 1.5 && currentPriceChangePercent > 1.0",
-                "fields": [
-                    "currentVolumeRatio",
-                    "currentPriceChangePercent"
-                ]
-            },
-            {
-                "name": "VOL开空策略信号1",
-                "description": "放量突破(价格显著下跌)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.8,
-                "expression": "currentVolumeRatio > 1.5 && currentPriceChangePercent < -1.0",
-                "fields": [
-                    "currentVolumeRatio",
-                    "currentPriceChangePercent"
-                ]
-            },
-            {
-                "name": "VOL开多策略信号2",
-                "description": "缩量回调，卖压不足",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "currentVolumeRatio < 0.7 && currentPriceChangePercent < 0",
-                "fields": [
-                    "currentVolumeRatio",
-                    "currentPriceChangePercent"
-                ]
-            },
-            {
-                "name": "VOL开空策略信号2",
-                "description": "缩量反弹，买盘不济",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.6,
-                "expression": "currentVolumeRatio < 0.7 && currentPriceChangePercent > 0",
-                "fields": [
-                    "currentVolumeRatio",
-                    "currentPriceChangePercent"
-                ]
-            },
-            {
-                "name": "VOL开多策略信号3",
-                "description": "价格创新高，但成交量未创新高",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.7,
-                "expression": "recentPriceHighIndex != recentVolumeHighIndex",
-                "fields": [
-                    "recentPriceHighIndex",
-                    "recentVolumeHighIndex"
-                ]
-            },
-            {
-                "name": "VOL开空策略信号3",
-                "description": "价格创新低，但成交量未创新低",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.7,
-                "expression": "recentPriceLowIndex != recentVolumeLowIndex",
-                "fields": [
-                    "recentPriceLowIndex",
-                    "recentVolumeLowIndex"
-                ]
-            }
-        ],
-        "BSVOL": [
-            {
-                "name": "BSVOL开多策略信号1",
-                "description": "量价齐升（健康上涨）",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.9,
-                "expression": "priceChange > 0.3 && currentNetVolume > 0 && currentVolumeRatio > 1.5",
-                "fields": [
-                    "priceChange",
-                    "currentNetVolume",
-                    "currentVolumeRatio"
-                ]
-            },
-            {
-                "name": "BSVOL开空策略信号1",
-                "description": "量价齐跌（健康下跌）",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.9,
-                "expression": "priceChange < 0.1 && currentNetVolume < 0 && currentVolumeRatio < 0.7",
-                "fields": [
-                    "priceChange",
-                    "currentNetVolume",
-                    "currentVolumeRatio"
-                ]
-            },
-            {
-                "name": "BSVOL开空策略信号2",
-                "description": "放量滞涨（顶部信号）",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.8,
-                "expression": "priceChange < 0.1 && currentTotalVolume > prevTotalVolume*1.5 && currentNetVolume < 0",
-                "fields": [
-                    "priceChange",
-                    "currentNetVolume",
-                    "currentTotalVolume",
-                    "prevTotalVolume"
-                ]
-            },
-            {
-                "name": "BSVOL开多策略信号2",
-                "description": "缩量止跌（底部信号）",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.8,
-                "expression": "priceChange > -0.1 && currentTotalVolume < prevTotalVolume*0.7 && currentNetVolume > 0",
-                "fields": [
-                    "priceChange",
-                    "currentNetVolume",
-                    "currentTotalVolume",
-                    "prevTotalVolume"
-                ]
-            },
-            {
-                "name": "BSVOL开空策略信号3",
-                "description": "价格创新高但主动买入量未创新高",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.7,
-                "expression": "priceChange > 0 && currentNetVolume < prevNetVolume",
-                "fields": [
-                    "priceChange",
-                    "currentNetVolume",
-                    "prevNetVolume"
-                ]
-            },
-            {
-                "name": "BSVOL开多策略信号3",
-                "description": "价格创新低但主动卖出量未创新低",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.7,
-                "expression": "priceChange < 0 && currentNetVolume > prevNetVolume",
-                "fields": [
-                    "priceChange",
-                    "currentNetVolume",
-                    "prevNetVolume"
-                ]
-            },
-            {
-                "name": "BSVOL开多策略信号4",
-                "description": "大单买入明显，资金积极进场",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "currentActiveBuyVolume > currentActiveSellVolume*3",
-                "fields": [
-                    "currentActiveBuyVolume",
-                    "currentActiveSellVolume"
-                ]
-            },
-            {
-                "name": "BSVOL开空策略信号4",
-                "description": "大单卖出明显，资金积极离场",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.6,
-                "expression": "currentActiveSellVolume > currentActiveBuyVolume*3",
-                "fields": [
-                    "currentActiveBuyVolume",
-                    "currentActiveSellVolume"
-                ]
-            }
-        ],
-        "FundingRate": [
-            {
-                "name": "资金费率开多策略信号",
-                "description": "资金费率为负数",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.7,
-                "expression": "fundingRate < 0.005",
-                "fields": [
-                    "fundingRate"
-                ]
-            },
-            {
-                "name": "资金费率开空策略信号",
-                "description": "资金费率为正数",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.7,
-                "expression": "fundingRate > 0.005",
-                "fields": [
-                    "fundingRate"
-                ]
-            }
-        ],
-        "BOLL": [
-            {
-                "name": "BOLL开多策略信号1",
-                "description": "从上轨下方突破到上轨上方(布林带收缩后向上突破上轨)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.8,
-                "expression": "prevPrice <= prevUpperBand && currentPrice > currentUpperBand && currentBandWidth < avgBandWidth*0.7",
-                "fields": [
-                    "prevPrice",
-                    "prevUpperBand",
-                    "currentPrice",
-                    "currentUpperBand",
-                    "currentBandWidth",
-                    "avgBandWidth"
-                ]
-            },
-            {
-                "name": "BOLL开多策略信号2",
-                "description": "从上轨下方突破到上轨上方(布林带未明显收缩，潜在开多信号)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "prevPrice <= prevUpperBand && currentPrice > currentUpperBand && currentBandWidth >= avgBandWidth*0.7",
-                "fields": [
-                    "prevPrice",
-                    "prevUpperBand",
-                    "currentPrice",
-                    "currentUpperBand",
-                    "currentBandWidth",
-                    "avgBandWidth"
-                ]
-            },
-            {
-                "name": "BOLL开空策略信号1",
-                "description": "从下轨上方跌破到下轨下方(布林带收缩后向上突破上轨)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.8,
-                "expression": "prevPrice >= prevLowerBand && currentPrice < currentLowerBand && currentBandWidth < avgBandWidth*0.7",
-                "fields": [
-                    "prevPrice",
-                    "prevLowerBand",
-                    "currentPrice",
-                    "currentLowerBand",
-                    "currentBandWidth",
-                    "avgBandWidth"
-                ]
-            },
-            {
-                "name": "BOLL开空策略信号2",
-                "description": "从下轨上方跌破到下轨下方(布林带未明显收缩，潜在开多信号)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.6,
-                "expression": "prevPrice >= prevLowerBand && currentPrice < currentLowerBand && currentBandWidth >= avgBandWidth*0.7",
-                "fields": [
-                    "prevPrice",
-                    "prevLowerBand",
-                    "currentPrice",
-                    "currentLowerBand",
-                    "currentBandWidth",
-                    "avgBandWidth"
-                ]
-            },
-            {
-                "name": "BOLL开多策略信号3",
-                "description": "反转信号 (从下轨反弹)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.7,
-                "expression": "prevPrice <= prevLowerBand && currentPrice > prevLowerBand",
-                "fields": [
-                    "prevPrice",
-                    "prevLowerBand",
-                    "currentPrice",
-                    "prevLowerBand"
-                ]
-            },
-            {
-                "name": "BOLL开空策略信号3",
-                "description": "反转信号 (从上轨回落)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.7,
-                "expression": "prevPrice >= prevUpperBand && currentPrice < prevUpperBand",
-                "fields": [
-                    "prevPrice",
-                    "prevUpperBand",
-                    "currentPrice",
-                    "prevUpperBand"
-                ]
-            },
-            {
-                "name": "BOLL开多策略信号4",
-                "description": "趋势中的中轨支撑(价格在中轨附近)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "currentPrice > currentMiddleBand && currentPrice < currentMiddleBand*1.01",
-                "fields": [
-                    "currentPrice",
-                    "currentMiddleBand"
-                ]
-            },
-            {
-                "name": "BOLL开多策略信号5",
-                "description": "趋势中的中轨支撑(价格在中轨上方)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.5,
-                "expression": "currentPrice > currentMiddleBand && currentPrice >= currentMiddleBand*1.01",
-                "fields": [
-                    "currentPrice",
-                    "currentMiddleBand"
-                ]
-            },
-            {
-                "name": "BOLL开空策略信号4",
-                "description": "趋势中的中轨阻力(价格反弹接近中轨)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.6,
-                "expression": "currentPrice <= currentMiddleBand && currentPrice > currentMiddleBand*0.99",
-                "fields": [
-                    "currentPrice",
-                    "currentMiddleBand"
-                ]
-            },
-            {
-                "name": "BOLL开空策略信号5",
-                "description": "趋势中的中轨阻力(价格在中轨下方)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.5,
-                "expression": "currentPrice <= currentMiddleBand && currentPrice <= currentMiddleBand*0.99",
-                "fields": [
-                    "currentPrice",
-                    "currentMiddleBand"
-                ]
-            }
-        ],
-        "OI": [
-            {
-                "name": "OI开多策略信号1",
-                "description": "价涨量增",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.9,
-                "expression": "(currentPrice - prevPrice) / prevPrice > 0.005 && (currentOI - prevOI) / prevOI > 0.01",
-                "fields": [
-                    "currentPrice",
-                    "prevPrice",
-                    "currentOI",
-                    "prevOI"
-                ]
-            },
-            {
-                "name": "OI开空策略信号1",
-                "description": "价跌量增",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.9,
-                "expression": "(currentPrice - prevPrice) / prevPrice < -0.005 && (currentOI - prevOI) / prevOI > 0.01",
-                "fields": [
-                    "currentPrice",
-                    "prevPrice",
-                    "currentOI",
-                    "prevOI"
-                ]
-            },
-            {
-                "name": "OI开空策略信号2",
-                "description": "价涨量缩(顶部背离,价格创出新高，但OI无创新高甚至下降)",
-                "enabled": true,
-                "side": "sell",
-                "confidence": 0.6,
-                "expression": "(currentPrice - prevPrice) / prevPrice > 0.005 && (currentOI - prevOI) / prevOI < -0.01",
-                "fields": [
-                    "currentPrice",
-                    "prevPrice",
-                    "currentOI",
-                    "prevOI"
-                ]
-            },
-            {
-                "name": "OI开多策略信号2",
-                "description": "价跌量缩 (多头平仓推动的下跌，可能见底)",
-                "enabled": true,
-                "side": "buy",
-                "confidence": 0.6,
-                "expression": "(currentPrice - prevPrice) / prevPrice < -0.005 && (currentOI - prevOI) / prevOI < -0.01",
-                "fields": [
-                    "currentPrice",
-                    "prevPrice",
-                    "currentOI",
-                    "prevOI"
-                ]
-            },
-            {
-                "name": "OI极端策略信号",
-                "description": "市场情绪极端，警惕大幅波动",
-                "enabled": true,
-                "side": "none",
-                "confidence": 0.0,
-                "expression": "(currentOI - prevOI) / prevOI > 0.1",
-                "fields": [
-                    "currentOI",
-                    "prevOI"
-                ]
-            }
-        ]
-    }
+    "strategies": [
+        {
+            "id": 1,
+            "target": "MACD",
+            "name": "MACD强势金叉",
+            "description": "零轴上金叉，强烈多头信号",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.85,
+            "expression": "prevMACD <= prevMACDSignal && currentMACD > currentMACDSignal && currentMACD > 0 && currentMACDHist > prevMACDHist",
+            "fields": [
+                "prevMACD",
+                "prevMACDSignal",
+                "currentMACD",
+                "currentMACDSignal",
+                "currentMACDHist",
+                "prevMACDHist"
+            ]
+        },
+        {
+            "id": 2,
+            "target": "MACD",
+            "name": "MACD弱势金叉",
+            "description": "零轴下金叉，谨慎看多",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.55,
+            "expression": "prevMACD <= prevMACDSignal && currentMACD > currentMACDSignal && currentMACD <= 0",
+            "fields": [
+                "prevMACD",
+                "prevMACDSignal",
+                "currentMACD",
+                "currentMACDSignal"
+            ]
+        },
+        {
+            "id": 3,
+            "target": "MACD",
+            "name": "MACD强势死叉",
+            "description": "零轴下死叉，强烈空头信号",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.85,
+            "expression": "prevMACD >= prevMACDSignal && currentMACD < currentMACDSignal && currentMACD < 0 && currentMACDHist < prevMACDHist",
+            "fields": [
+                "prevMACD",
+                "prevMACDSignal",
+                "currentMACD",
+                "currentMACDSignal",
+                "currentMACDHist",
+                "prevMACDHist"
+            ]
+        },
+        {
+            "id": 4,
+            "target": "MACD",
+            "name": "MACD弱势死叉",
+            "description": "零轴上死叉，谨慎看空",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.6,
+            "expression": "prevMACD >= prevMACDSignal && currentMACD < currentMACDSignal && currentMACD >= 0",
+            "fields": [
+                "prevMACD",
+                "prevMACDSignal",
+                "currentMACD",
+                "currentMACDSignal"
+            ]
+        },
+        {
+            "id": 5,
+            "target": "MACD",
+            "name": "MACD零轴突破多头",
+            "description": "MACD上穿零轴，趋势转多",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.75,
+            "expression": "prevMACD <= 0 && currentMACD > 0 && currentMACDHist > 0",
+            "fields": [
+                "prevMACD",
+                "currentMACD",
+                "currentMACDHist"
+            ]
+        },
+        {
+            "id": 6,
+            "target": "MACD",
+            "name": "MACD零轴突破空头",
+            "description": "MACD下穿零轴，趋势转空",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.75,
+            "expression": "prevMACD >= 0 && currentMACD < 0 && currentMACDHist < 0",
+            "fields": [
+                "prevMACD",
+                "currentMACD",
+                "currentMACDHist"
+            ]
+        },
+        {
+            "id": 7,
+            "target": "MACD",
+            "name": "MACD柱状线加速上涨",
+            "description": "柱状线向上加速，多头动量增强",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.7,
+            "expression": "currentMACDHist > 0 && currentMACDHist > prevMACDHist && (currentMACDHist - prevMACDHist) > abs(prevMACDHist * 0.1)",
+            "fields": [
+                "currentMACDHist",
+                "prevMACDHist"
+            ]
+        },
+        {
+            "id": 8,
+            "target": "MACD",
+            "name": "MACD柱状线加速下跌",
+            "description": "柱状线向下加速，空头动量增强",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.7,
+            "expression": "currentMACDHist < 0 && currentMACDHist < prevMACDHist && (prevMACDHist - currentMACDHist) > abs(prevMACDHist * 0.1)",
+            "fields": [
+                "currentMACDHist",
+                "prevMACDHist"
+            ]
+        },
+        {
+            "id": 9,
+            "target": "MACD",
+            "name": "MACD底背离",
+            "description": "价格新低但MACD未创新低，反转信号",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.8,
+            "expression": "recentPriceLow < prevPriceLow && recentMACDLow > prevMACDLow && currentMACDHist > prevMACDHist",
+            "fields": [
+                "recentPriceLow",
+                "prevPriceLow",
+                "recentMACDLow",
+                "prevMACDLow",
+                "currentMACDHist",
+                "prevMACDHist"
+            ]
+        },
+        {
+            "id": 10,
+            "target": "MACD",
+            "name": "MACD顶背离",
+            "description": "价格新高但MACD未创新高，反转信号",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.8,
+            "expression": "recentPriceHigh > prevPriceHigh && recentMACDHigh < prevMACDHigh && currentMACDHist < prevMACDHist",
+            "fields": [
+                "recentPriceHigh",
+                "prevPriceHigh",
+                "recentMACDHigh",
+                "prevMACDHigh",
+                "currentMACDHist",
+                "prevMACDHist"
+            ]
+        },
+        {
+            "id": 11,
+            "target": "EMA",
+            "name": "EMA20突破多头",
+            "description": "价格上穿EMA20，趋势转多",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.75,
+            "expression": "prevPrice < prevEMA20 && currentPrice > currentEMA20 && currentEMA20 > prevEMA20",
+            "fields": [
+                "prevPrice",
+                "prevEMA20",
+                "currentPrice",
+                "currentEMA20"
+            ]
+        },
+        {
+            "id": 12,
+            "target": "EMA",
+            "name": "EMA20突破空头",
+            "description": "价格下穿EMA20，趋势转空",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.75,
+            "expression": "prevPrice > prevEMA20 && currentPrice < currentEMA20 && currentEMA20 < prevEMA20",
+            "fields": [
+                "prevPrice",
+                "prevEMA20",
+                "currentPrice",
+                "currentEMA20"
+            ]
+        },
+        {
+            "id": 13,
+            "target": "EMA",
+            "name": "EMA20强势支撑",
+            "description": "价格在上升的EMA20处获得强支撑",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.8,
+            "expression": "currentPrice > currentEMA20 && (currentPrice - currentEMA20)/currentEMA20 < 0.005 && currentEMA20 > prevEMA20",
+            "fields": [
+                "currentPrice",
+                "currentEMA20",
+                "prevEMA20"
+            ]
+        },
+        {
+            "id": 14,
+            "target": "EMA",
+            "name": "EMA20弱势支撑",
+            "description": "价格在EMA20附近获得支撑",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.6,
+            "expression": "currentPrice > currentEMA20 && (currentPrice - currentEMA20)/currentEMA20 >= 0.005 && (currentPrice - currentEMA20)/currentEMA20 < 0.015",
+            "fields": [
+                "currentPrice",
+                "currentEMA20"
+            ]
+        },
+        {
+            "id": 15,
+            "target": "EMA",
+            "name": "EMA20强势阻力",
+            "description": "价格在下降的EMA20处受到强阻力",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.8,
+            "expression": "currentPrice < currentEMA20 && (currentEMA20 - currentPrice)/currentEMA20 < 0.005 && currentEMA20 < prevEMA20",
+            "fields": [
+                "currentPrice",
+                "currentEMA20",
+                "prevEMA20"
+            ]
+        },
+        {
+            "id": 16,
+            "target": "EMA",
+            "name": "EMA20弱势阻力",
+            "description": "价格在EMA20附近受到阻力",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.6,
+            "expression": "currentPrice < currentEMA20 && (currentEMA20 - currentPrice)/currentEMA20 >= 0.005 && (currentEMA20 - currentPrice)/currentEMA20 < 0.015",
+            "fields": [
+                "currentPrice",
+                "currentEMA20"
+            ]
+        },
+        {
+            "id": 17,
+            "target": "EMA",
+            "name": "EMA20多头趋势",
+            "description": "价格在EMA20上方且EMA斜率向上",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.7,
+            "expression": "currentPrice > currentEMA20 && currentEMA20 > prevEMA20 && (currentEMA20 - prevEMA20)/prevEMA20 > 0.001",
+            "fields": [
+                "currentEMA20",
+                "currentPrice",
+                "prevEMA20"
+            ]
+        },
+        {
+            "id": 18,
+            "target": "EMA",
+            "name": "EMA20空头趋势",
+            "description": "价格在EMA20下方且EMA斜率向下",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.7,
+            "expression": "currentPrice < currentEMA20 && currentEMA20 < prevEMA20 && (prevEMA20 - currentEMA20)/prevEMA20 > 0.001",
+            "fields": [
+                "currentEMA20",
+                "currentPrice",
+                "prevEMA20"
+            ]
+        },
+        {
+            "id": 19,
+            "target": "RSI",
+            "name": "RSI超卖反弹",
+            "description": "RSI从超卖区上穿30线",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.75,
+            "expression": "prevRSI < 30 && currentRSI >= 30 && currentRSI < 50",
+            "fields": [
+                "prevRSI",
+                "currentRSI"
+            ]
+        },
+        {
+            "id": 20,
+            "target": "RSI",
+            "name": "RSI超买回落",
+            "description": "RSI从超买区下穿70线",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.75,
+            "expression": "prevRSI > 70 && currentRSI <= 70 && currentRSI > 50",
+            "fields": [
+                "prevRSI",
+                "currentRSI"
+            ]
+        },
+        {
+            "id": 21,
+            "target": "RSI",
+            "name": "RSI强势上穿",
+            "description": "在强势区域上穿50中线",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.7,
+            "expression": "currentRSI >= 50 && currentRSI < 70 && prevRSI < 50",
+            "fields": [
+                "prevRSI",
+                "currentRSI"
+            ]
+        },
+        {
+            "id": 22,
+            "target": "RSI",
+            "name": "RSI弱势下穿",
+            "description": "在弱势区域下穿50中线",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.7,
+            "expression": "currentRSI > 30 && currentRSI <= 50 && prevRSI > 50",
+            "fields": [
+                "prevRSI",
+                "currentRSI"
+            ]
+        },
+        {
+            "id": 23,
+            "target": "RSI",
+            "name": "RSI底背离",
+            "description": "价格新低但RSI未创新低，强烈看多",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.85,
+            "expression": "recentPriceLow < prevPriceLow && recentRSILow > prevRSILow && currentRSI > 30",
+            "fields": [
+                "recentPriceLow",
+                "prevPriceLow",
+                "recentRSILow",
+                "prevRSILow",
+                "currentRSI"
+            ]
+        },
+        {
+            "id": 24,
+            "target": "RSI",
+            "name": "RSI顶背离",
+            "description": "价格新高但RSI未创新高，强烈看空",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.85,
+            "expression": "recentPriceHigh > prevPriceHigh && recentRSIHigh < prevRSIHigh && currentRSI < 70",
+            "fields": [
+                "recentPriceHigh",
+                "prevPriceHigh",
+                "recentRSIHigh",
+                "prevRSIHigh",
+                "currentRSI"
+            ]
+        },
+        {
+            "id": 25,
+            "target": "RSI",
+            "name": "RSI超买警告",
+            "description": "RSI进入超买区，警惕回调风险",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.6,
+            "expression": "currentRSI > 70 && prevRSI <= 70",
+            "fields": [
+                "currentRSI",
+                "prevRSI"
+            ]
+        },
+        {
+            "id": 26,
+            "target": "RSI",
+            "name": "RSI超卖机会",
+            "description": "RSI进入超卖区，关注反弹机会",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.6,
+            "expression": "currentRSI < 30 && prevRSI >= 30",
+            "fields": [
+                "currentRSI",
+                "prevRSI"
+            ]
+        },
+        {
+            "id": 27,
+            "target": "RSI",
+            "name": "RSI二次探底",
+            "description": "RSI在超卖区形成双底形态",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.8,
+            "expression": "currentRSI < 35 && abs(currentRSI - prevRSILow) < 5 && currentPrice > prevPriceLow",
+            "fields": [
+                "currentRSI",
+                "prevRSILow",
+                "currentPrice",
+                "prevPriceLow"
+            ]
+        },
+        {
+            "id": 28,
+            "target": "VOL",
+            "name": "VOL放量突破上涨",
+            "description": "显著放量伴随价格大幅上涨",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.85,
+            "expression": "currentVolumeRatio > 2.0 && currentPriceChangePercent > 1.5",
+            "fields": [
+                "currentVolumeRatio",
+                "currentPriceChangePercent"
+            ]
+        },
+        {
+            "id": 29,
+            "target": "VOL",
+            "name": "放量突破下跌",
+            "description": "显著放量伴随价格大幅下跌",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.85,
+            "expression": "currentVolumeRatio > 2.0 && currentPriceChangePercent < -1.5",
+            "fields": [
+                "currentVolumeRatio",
+                "currentPriceChangePercent"
+            ]
+        },
+        {
+            "id": 30,
+            "target": "VOL",
+            "name": "缩量回调买入",
+            "description": "缩量回调显示卖压不足",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.65,
+            "expression": "currentVolumeRatio < 0.6 && currentPriceChangePercent < -0.5 && currentPriceChangePercent > -3.0",
+            "fields": [
+                "currentVolumeRatio",
+                "currentPriceChangePercent"
+            ]
+        },
+        {
+            "id": 31,
+            "target": "VOL",
+            "name": "缩量反弹卖出",
+            "description": "缩量反弹显示买盘不济",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.65,
+            "expression": "currentVolumeRatio < 0.6 && currentPriceChangePercent > 0.5 && currentPriceChangePercent < 3.0",
+            "fields": [
+                "currentVolumeRatio",
+                "currentPriceChangePercent"
+            ]
+        },
+        {
+            "id": 32,
+            "target": "VOL",
+            "name": "量价顶背离",
+            "description": "价格新高但成交量未配合",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.7,
+            "expression": "recentPriceHighIndex != recentVolumeHighIndex && currentVolumeRatio < 1.0",
+            "fields": [
+                "recentPriceHighIndex",
+                "recentVolumeHighIndex",
+                "currentVolumeRatio"
+            ]
+        },
+        {
+            "id": 33,
+            "target": "VOL",
+            "name": "量价底背离",
+            "description": "价格新低但成交量未配合",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.7,
+            "expression": "recentPriceLowIndex != recentVolumeLowIndex && currentVolumeRatio < 1.0",
+            "fields": [
+                "recentPriceLowIndex",
+                "recentVolumeLowIndex",
+                "currentVolumeRatio"
+            ]
+        },
+        {
+            "id": 34,
+            "target": "BSVOL",
+            "name": "BSVOL强势量价齐升",
+            "description": "大幅上涨伴随大单净流入",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.9,
+            "expression": "(currentPrice - prevPrice) / prevPrice > 0.005 && currentNetVolume > 0 && currentVolumeRatio > 2.0 && currentActiveBuyVolume > currentActiveSellVolume * 1.5",
+            "fields": [
+                "currentPrice",
+                "prevPrice",
+                "currentNetVolume",
+                "currentVolumeRatio",
+                "currentActiveBuyVolume",
+                "currentActiveSellVolume"
+            ]
+        },
+        {
+            "id": 35,
+            "target": "BSVOL",
+            "name": "强势量价齐跌",
+            "description": "大幅下跌伴随大单净流出",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.9,
+            "expression": "(currentPrice - prevPrice) / prevPrice < -0.005 && currentNetVolume < 0 && currentVolumeRatio < 0.5 && currentActiveSellVolume > currentActiveBuyVolume * 1.5",
+            "fields": [
+                "currentPrice",
+                "prevPrice",
+                "currentNetVolume",
+                "currentVolumeRatio",
+                "currentActiveBuyVolume",
+                "currentActiveSellVolume"
+            ]
+        },
+        {
+            "id": 36,
+            "target": "BSVOL",
+            "name": "放量滞涨",
+            "description": "高位放量但价格上涨乏力",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.8,
+            "expression": "(currentPrice - prevPrice) / prevPrice < 0.002 && currentTotalVolume > prevTotalVolume * 1.8 && currentNetVolume < 0",
+            "fields": [
+                "currentPrice",
+                "prevPrice",
+                "currentNetVolume",
+                "currentTotalVolume",
+                "prevTotalVolume"
+            ]
+        },
+        {
+            "id": 37,
+            "target": "BSVOL",
+            "name": "缩量止跌",
+            "description": "低位缩量但价格企稳",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.8,
+            "expression": "(currentPrice - prevPrice) / prevPrice > -0.002 && currentTotalVolume < prevTotalVolume * 0.6 && currentNetVolume > 0",
+            "fields": [
+                "currentPrice",
+                "prevPrice",
+                "currentNetVolume",
+                "currentTotalVolume",
+                "prevTotalVolume"
+            ]
+        },
+        {
+            "id": 38,
+            "target": "BSVOL",
+            "name": "顶背离卖出",
+            "description": "价格新高但大单流入减少",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.75,
+            "expression": "(currentPrice - prevPrice) / prevPrice > 0 && currentNetVolume < prevNetVolume && currentNetVolume < 0",
+            "fields": [
+                "currentPrice",
+                "prevPrice",
+                "currentNetVolume",
+                "prevNetVolume"
+            ]
+        },
+        {
+            "id": 39,
+            "target": "BSVOL",
+            "name": "底背离买入",
+            "description": "价格新低但大单流出减少",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.75,
+            "expression": "(currentPrice - prevPrice) / prevPrice < 0 && currentNetVolume > prevNetVolume && currentNetVolume > 0",
+            "fields": [
+                "currentPrice",
+                "prevPrice",
+                "currentNetVolume",
+                "prevNetVolume"
+            ]
+        },
+        {
+            "id": 40,
+            "target": "BSVOL",
+            "name": "大单密集买入",
+            "description": "大单买入明显占优",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.7,
+            "expression": "currentActiveBuyVolume > currentActiveSellVolume * 2.5 && currentVolumeRatio > 1.2",
+            "fields": [
+                "currentActiveBuyVolume",
+                "currentActiveSellVolume",
+                "currentVolumeRatio"
+            ]
+        },
+        {
+            "id": 41,
+            "target": "BSVOL",
+            "name": "大单密集卖出",
+            "description": "大单卖出明显占优",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.7,
+            "expression": "currentActiveSellVolume > currentActiveBuyVolume * 2.5 && currentVolumeRatio < 0.8",
+            "fields": [
+                "currentActiveBuyVolume",
+                "currentActiveSellVolume",
+                "currentVolumeRatio"
+            ]
+        },
+        {
+            "id": 42,
+            "target": "FundingRate",
+            "name": "负资金费率多头",
+            "description": "资金费率为负，做多有利",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.75,
+            "expression": "fundingRate < -0.0001",
+            "fields": [
+                "fundingRate"
+            ]
+        },
+        {
+            "id": 43,
+            "target": "FundingRate",
+            "name": "正资金费率空头",
+            "description": "资金费率为正，做空有利",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.75,
+            "expression": "fundingRate > 0.0001",
+            "fields": [
+                "fundingRate"
+            ]
+        },
+        {
+            "id": 44,
+            "target": "FundingRate",
+            "name": "极端负费率反转",
+            "description": "极端负费率可能预示市场过热",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.6,
+            "expression": "fundingRate < -0.001",
+            "fields": [
+                "fundingRate"
+            ]
+        },
+        {
+            "id": 45,
+            "target": "FundingRate",
+            "name": "极端正费率反转",
+            "description": "极端正费率可能预示市场过冷",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.6,
+            "expression": "fundingRate > 0.001",
+            "fields": [
+                "fundingRate"
+            ]
+        },
+        {
+            "id": 46,
+            "target": "BOLL",
+            "name": "布林带强势突破",
+            "description": "布林带收缩后向上突破上轨",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.85,
+            "expression": "prevPrice <= prevUpperBand && currentPrice > currentUpperBand && currentBandWidth < avgBandWidth * 0.6",
+            "fields": [
+                "prevPrice",
+                "prevUpperBand",
+                "currentPrice",
+                "currentUpperBand",
+                "currentBandWidth",
+                "avgBandWidth"
+            ]
+        },
+        {
+            "id": 47,
+            "target": "BOLL",
+            "name": "布林带普通突破",
+            "description": "向上突破上轨但布林带未明显收缩",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.65,
+            "expression": "prevPrice <= prevUpperBand && currentPrice > currentUpperBand && currentBandWidth >= avgBandWidth * 0.6",
+            "fields": [
+                "prevPrice",
+                "prevUpperBand",
+                "currentPrice",
+                "currentUpperBand",
+                "currentBandWidth",
+                "avgBandWidth"
+            ]
+        },
+        {
+            "id": 48,
+            "target": "BOLL",
+            "name": "布林带强势跌破",
+            "description": "布林带收缩后向下跌破下轨",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.85,
+            "expression": "prevPrice >= prevLowerBand && currentPrice < currentLowerBand && currentBandWidth < avgBandWidth * 0.6",
+            "fields": [
+                "prevPrice",
+                "prevLowerBand",
+                "currentPrice",
+                "currentLowerBand",
+                "currentBandWidth",
+                "avgBandWidth"
+            ]
+        },
+        {
+            "id": 49,
+            "target": "BOLL",
+            "name": "布林带普通跌破",
+            "description": "向下跌破下轨但布林带未明显收缩",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.65,
+            "expression": "prevPrice >= prevLowerBand && currentPrice < currentLowerBand && currentBandWidth >= avgBandWidth * 0.6",
+            "fields": [
+                "prevPrice",
+                "prevLowerBand",
+                "currentPrice",
+                "currentLowerBand",
+                "currentBandWidth",
+                "avgBandWidth"
+            ]
+        },
+        {
+            "id": 50,
+            "target": "BOLL",
+            "name": "下轨反弹买入",
+            "description": "价格从下轨反弹",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.75,
+            "expression": "prevPrice <= prevLowerBand && currentPrice > currentLowerBand && currentPrice > currentMiddleBand",
+            "fields": [
+                "prevPrice",
+                "prevLowerBand",
+                "currentPrice",
+                "currentLowerBand",
+                "currentMiddleBand"
+            ]
+        },
+        {
+            "id": 51,
+            "target": "BOLL",
+            "name": "上轨回落卖出",
+            "description": "价格从上轨回落",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.75,
+            "expression": "prevPrice >= prevUpperBand && currentPrice < currentUpperBand && currentPrice < currentMiddleBand",
+            "fields": [
+                "prevPrice",
+                "prevUpperBand",
+                "currentPrice",
+                "currentUpperBand",
+                "currentMiddleBand"
+            ]
+        },
+        {
+            "id": 52,
+            "target": "BOLL",
+            "name": "中轨支撑买入",
+            "description": "价格在中轨获得支撑",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.7,
+            "expression": "currentPrice > currentMiddleBand && (currentPrice - currentMiddleBand)/currentMiddleBand < 0.008",
+            "fields": [
+                "currentPrice",
+                "currentMiddleBand"
+            ]
+        },
+        {
+            "id": 53,
+            "target": "BOLL",
+            "name": "中轨上方强势",
+            "description": "价格在中轨上方运行",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.6,
+            "expression": "currentPrice > currentMiddleBand && (currentPrice - currentMiddleBand)/currentMiddleBand >= 0.008",
+            "fields": [
+                "currentPrice",
+                "currentMiddleBand"
+            ]
+        },
+        {
+            "id": 54,
+            "target": "BOLL",
+            "name": "中轨阻力卖出",
+            "description": "价格在中轨受到阻力",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.7,
+            "expression": "currentPrice < currentMiddleBand && (currentMiddleBand - currentPrice)/currentMiddleBand < 0.008",
+            "fields": [
+                "currentPrice",
+                "currentMiddleBand"
+            ]
+        },
+        {
+            "id": 55,
+            "target": "BOLL",
+            "name": "中轨下方弱势",
+            "description": "价格在中轨下方运行",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.6,
+            "expression": "currentPrice < currentMiddleBand && (currentMiddleBand - currentPrice)/currentMiddleBand >= 0.008",
+            "fields": [
+                "currentPrice",
+                "currentMiddleBand"
+            ]
+        },
+        {
+            "id": 56,
+            "target": "OI",
+            "name": "OI价涨量增多头",
+            "description": "价格上涨伴随持仓量增加",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.8,
+            "expression": "(currentOI - prevOI) / prevOI > 0.02 && (currentPrice - prevPrice) / prevPrice > 0.005",
+            "fields": [
+                "currentOI",
+                "prevOI",
+                "currentPrice",
+                "prevPrice"
+            ]
+        },
+        {
+            "id": 57,
+            "target": "OI",
+            "name": "价跌量增空头",
+            "description": "价格下跌伴随持仓量增加",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.8,
+            "expression": "(currentOI - prevOI) / prevOI > 0.02 && (currentPrice - prevPrice) / prevPrice < -0.005",
+            "fields": [
+                "currentOI",
+                "prevOI",
+                "currentPrice",
+                "prevPrice"
+            ]
+        },
+        {
+            "id": 58,
+            "target": "OI",
+            "name": "价涨量缩顶背离",
+            "description": "价格上涨但持仓量减少",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.7,
+            "expression": "(currentOI - prevOI) / prevOI < -0.01 && (currentPrice - prevPrice) / prevPrice > 0.005",
+            "fields": [
+                "currentOI",
+                "prevOI",
+                "currentPrice",
+                "prevPrice"
+            ]
+        },
+        {
+            "id": 59,
+            "target": "OI",
+            "name": "价跌量缩底背离",
+            "description": "价格下跌但持仓量减少",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.7,
+            "expression": "(currentOI - prevOI) / prevOI < -0.01 && (currentPrice - prevPrice) / prevPrice < -0.005",
+            "fields": [
+                "currentOI",
+                "prevOI",
+                "currentPrice",
+                "prevPrice"
+            ]
+        },
+        {
+            "id": 60,
+            "target": "OI",
+            "name": "持仓极端变化警告",
+            "description": "持仓量极端变化，警惕大幅波动",
+            "enabled": true,
+            "side": "none",
+            "confidence": 0.3,
+            "expression": "abs((currentOI - prevOI) / prevOI) > 0.15",
+            "fields": [
+                "currentOI",
+                "prevOI"
+            ]
+        },
+        {
+            "id": 61,
+            "target": "OI",
+            "name": "持仓量突破",
+            "description": "持仓量突破近期高点",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.75,
+            "expression": "(currentOI - prevOI) / prevOI > 0.05 && currentPrice > prevPrice",
+            "fields": [
+                "currentOI",
+                "prevOI",
+                "currentPrice",
+                "prevPrice"
+            ]
+        },
+        {
+            "id": 62,
+            "target": "MACD",
+            "name": "MACD双底形态",
+            "description": "MACD柱状线形成双底，反转信号",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.75,
+            "expression": "currentMACDHist > 0 && abs(currentMACDHist - prevMACDHist) < abs(prevMACDHist * 0.2) && prevMACDHist < 0",
+            "fields": [
+                "currentMACDHist",
+                "prevMACDHist"
+            ]
+        },
+        {
+            "id": 63,
+            "target": "MACD",
+            "name": "MACD动量衰竭",
+            "description": "MACD柱状线动量减弱，可能反转",
+            "enabled": true,
+            "side": "warning",
+            "confidence": 0.6,
+            "expression": "abs(currentMACDHist - prevMACDHist) < abs(prevMACDHist * 0.05) && abs(currentMACDHist) > 0",
+            "fields": [
+                "currentMACDHist",
+                "prevMACDHist"
+            ]
+        },
+        {
+            "id": 64,
+            "target": "RSI",
+            "name": "RSI隐藏背离多头",
+            "description": "价格回调但RSI上升，隐藏看多信号",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.8,
+            "expression": "currentPrice < prevPrice && currentRSI > prevRSI && currentRSI > 40 && currentRSI < 70",
+            "fields": [
+                "currentPrice",
+                "prevPrice",
+                "currentRSI",
+                "prevRSI"
+            ]
+        },
+        {
+            "id": 65,
+            "target": "RSI",
+            "name": "RSI隐藏背离空头",
+            "description": "价格反弹但RSI下降，隐藏看空信号",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.8,
+            "expression": "currentPrice > prevPrice && currentRSI < prevRSI && currentRSI < 60 && currentRSI > 30",
+            "fields": [
+                "currentPrice",
+                "prevPrice",
+                "currentRSI",
+                "prevRSI"
+            ]
+        },
+        {
+            "id": 69,
+            "target": "BOLL",
+            "name": "布林带张口确认",
+            "description": "布林带张口伴随价格突破，趋势确认",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.85,
+            "expression": "currentBandWidth > avgBandWidth * 1.2 && currentPrice > currentUpperBand && prevPrice <= prevUpperBand",
+            "fields": [
+                "currentBandWidth",
+                "avgBandWidth",
+                "currentPrice",
+                "currentUpperBand",
+                "prevPrice",
+                "prevUpperBand"
+            ]
+        },
+        {
+            "id": 71,
+            "target": "VOL",
+            "name": "成交量地量见底",
+            "description": "成交量极度萎缩，可能见底信号",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.7,
+            "expression": "currentVolumeRatio < 0.3 && currentPriceChangePercent > -2.0 && currentPriceChangePercent < 0",
+            "fields": [
+                "currentVolumeRatio",
+                "currentPriceChangePercent"
+            ]
+        },
+        {
+            "id": 72,
+            "target": "BSVOL",
+            "name": "大单连续流入",
+            "description": "大单连续净流入，资金积极布局",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.85,
+            "expression": "currentNetVolume > 0 && prevNetVolume > 0 && currentActiveBuyVolume > currentActiveSellVolume * 2.0",
+            "fields": [
+                "currentNetVolume",
+                "prevNetVolume",
+                "currentActiveBuyVolume",
+                "currentActiveSellVolume"
+            ]
+        },
+        {
+            "id": 73,
+            "target": "BSVOL",
+            "name": "大单连续流出",
+            "description": "大单连续净流出，资金持续撤离",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.85,
+            "expression": "currentNetVolume < 0 && prevNetVolume < 0 && currentActiveSellVolume > currentActiveBuyVolume * 2.0",
+            "fields": [
+                "currentNetVolume",
+                "prevNetVolume",
+                "currentActiveSellVolume",
+                "currentActiveBuyVolume"
+            ]
+        }
+    ]
 }

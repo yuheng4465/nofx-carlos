@@ -38,6 +38,18 @@ func calculateCCI(klines []Kline, period int) []*CCIData {
 	return cciData
 }
 
+// calculateCCI 计算顺势指标
+func calculateCCIList(klines []Kline, period int) []float64 {
+	// 收盘价、最高价、最低价
+	var closes, highs, lows []float64
+	for _, kline := range klines {
+		closes = append(closes, kline.Close)
+		highs = append(highs, kline.High)
+		lows = append(lows, kline.Low)
+	}
+	return talib.Cci(highs, lows, closes, period)
+}
+
 // 转换为字符串
 func getCCIDataString(cciData []*CCIData, period int) string {
 	var data []float64

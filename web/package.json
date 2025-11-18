@@ -14,11 +14,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-<<<<<<< HEAD
     "@noble/secp256k1": "^3.0.0",
-=======
     "@radix-ui/react-alert-dialog": "^1.1.15",
->>>>>>> upstream/dev
     "@radix-ui/react-slot": "^1.2.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -47,14 +47,3 @@ func getFundingRateSignal(fundingRate float64) *Signal {
 		}
 	}
 }
-
-// 获取策略所需数据
-func getFundingRateCases(fundingRate float64) *Cases {
-	casesData := &Cases{}
-	casesData.Name = TargetMACD
-	casesData.Metrics = map[string]interface{}{
-		"fundingRate": fundingRate,
-	}
-
-	return casesData
-}

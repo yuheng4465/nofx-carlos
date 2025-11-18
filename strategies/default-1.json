@@ -1,0 +1,618 @@
+{
+    "name": "default",
+    "version": 1.0,
+    "strategies": [
+        {
+            "id": 1,
+            "name": "多周期趋势共振策略",
+            "description": "基于4h趋势方向，1h动量确认，15m精准入场的多框架共振策略",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.82,
+            "group": {
+                "logical": "and",
+                "expressions": [
+                    {
+                        "expression": "slope(EMA20_4h) > 0 && current(Price_4h) > current(EMA20_4h) && current(MACD_4h) > current(MACDSignal_4h)",
+                        "description": "4h级别趋势向上：EMA20斜率向上，价格在均线上方，MACD金叉",
+                        "fields": [
+                            "EMA20_4h",
+                            "Price_4h",
+                            "MACD_4h",
+                            "MACDSignal_4h"
+                        ]
+                    },
+                    {
+                        "expression": "current(RSI_1h) > 45 && current(RSI_1h) < 75 && slope(OBV_1h) > 0 && current(CMF_1h) > 0",
+                        "description": "1h动量健康：RSI在健康区间，OBV资金流入，CMF资金流正",
+                        "fields": [
+                            "RSI_1h",
+                            "OBV_1h",
+                            "CMF_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(MACD_15m) > prev(MACD_15m) && current(Price_15m) > current(EMA20_15m) && current(Price_15m) < current(BOLLUp_15m) * 0.98",
+                        "description": "15m入场信号：MACD转强，价格在均线上方，未过度超买",
+                        "fields": [
+                            "MACD_15m",
+                            "Price_15m",
+                            "EMA20_15m",
+                            "BOLLUp_15m"
+                        ]
+                    },
+                    {
+                        "expression": "current(ATR_4h) / current(Price_4h) < 0.03 && avg(VOL_1h) > avg(VOL_4h) * 0.8",
+                        "description": "风险过滤：波动率可控，成交量活跃",
+                        "fields": [
+                            "ATR_4h",
+                            "Price_4h",
+                            "VOL_1h",
+                            "VOL_4h"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "name": "空头动量突破策略",
+            "description": "识别趋势反转，结合动量衰竭和资金流出的空头机会",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.78,
+            "group": {
+                "logical": "and",
+                "expressions": [
+                    {
+                        "expression": "slope(EMA20_4h) < 0 && current(Price_4h) < current(EMA20_4h) && current(MACD_4h) < current(MACDSignal_4h)",
+                        "description": "4h级别趋势向下：EMA20斜率向下，价格在均线下方，MACD死叉",
+                        "fields": [
+                            "EMA20_4h",
+                            "Price_4h",
+                            "MACD_4h",
+                            "MACDSignal_4h"
+                        ]
+                    },
+                    {
+                        "expression": "current(RSI_1h) < 55 && current(RSI_1h) > 25 && slope(OBV_1h) < 0 && current(CMF_1h) < -0.05",
+                        "description": "1h动量转弱：RSI未超卖但下行，OBV资金流出，CMF资金流负",
+                        "fields": [
+                            "RSI_1h",
+                            "OBV_1h",
+                            "CMF_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(MACD_15m) < prev(MACD_15m) && current(Price_15m) < current(EMA20_15m) && current(Price_15m) > current(BOLLLow_15m) * 1.02",
+                        "description": "15m入场信号：MACD转弱，价格在均线下方，未过度超卖",
+                        "fields": [
+                            "MACD_15m",
+                            "Price_15m",
+                            "EMA20_15m",
+                            "BOLLLow_15m"
+                        ]
+                    },
+                    {
+                        "expression": "current(SellVol) > current(BuyVol) * 1.2 && current(FundingRate) < 0.01",
+                        "description": "风险确认：卖盘压力大，资金费率不高",
+                        "fields": [
+                            "SellVol",
+                            "BuyVol",
+                            "FundingRate"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 3,
+            "name": "布林带收敛突破策略",
+            "description": "捕捉布林带收敛后的方向性突破，结合成交量确认",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.75,
+            "group": {
+                "logical": "and",
+                "expressions": [
+                    {
+                        "expression": "(current(BOLLUp_4h) - current(BOLLLow_4h)) / current(BOLLMid_4h) < 0.04",
+                        "description": "4h布林带收敛：带宽小于4%，表明波动率压缩",
+                        "fields": [
+                            "BOLLUp_4h",
+                            "BOLLLow_4h",
+                            "BOLLMid_4h"
+                        ]
+                    },
+                    {
+                        "expression": "current(Price_1h) > current(BOLLUp_1h) && current(VOL_1h) > avg(VOL_1h) * 1.5",
+                        "description": "1h向上突破：价格突破上轨，成交量放大确认",
+                        "fields": [
+                            "Price_1h",
+                            "BOLLUp_1h",
+                            "VOL_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(RSI_15m) < 70 && current(CCI_15m) > 0",
+                        "description": "15m动量配合：RSI未超买，CCI转强",
+                        "fields": [
+                            "RSI_15m",
+                            "CCI_15m"
+                        ]
+                    },
+                    {
+                        "expression": "slope(OI) > 0 && current(CMF_15m) > 0",
+                        "description": "资金流向确认：持仓量增加，资金流入",
+                        "fields": [
+                            "OI",
+                            "CMF_15m"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 4,
+            "name": "RSI背离预警策略",
+            "description": "识别价格与RSI的背离信号，提前预警趋势反转",
+            "enabled": true,
+            "side": "warning",
+            "confidence": 0.68,
+            "group": {
+                "logical": "or",
+                "expressions": [
+                    {
+                        "expression": "newHigh(Price_4h, 10) && !newHigh(RSI_4h, 10) && current(RSI_4h) > 70",
+                        "description": "4h顶背离：价格新高但RSI未新高，且RSI超买",
+                        "fields": [
+                            "Price_4h",
+                            "RSI_4h"
+                        ]
+                    },
+                    {
+                        "expression": "newLow(Price_4h, 10) && !newLow(RSI_4h, 10) && current(RSI_4h) < 30",
+                        "description": "4h底背离：价格新低但RSI未新低，且RSI超卖",
+                        "fields": [
+                            "Price_4h",
+                            "RSI_4h"
+                        ]
+                    },
+                    {
+                        "expression": "slope(Price_1h) > 0 && slope(OBV_1h) < 0 && current(CMF_1h) < 0",
+                        "description": "1h量价背离：价格上涨但资金流出",
+                        "fields": [
+                            "Price_1h",
+                            "OBV_1h",
+                            "CMF_1h"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 5,
+            "name": "高波动率避险策略",
+            "description": "在市场异常波动时自动降低风险暴露",
+            "enabled": true,
+            "side": "none",
+            "confidence": 0.85,
+            "group": {
+                "logical": "or",
+                "expressions": [
+                    {
+                        "expression": "current(ATR_1h) / current(Price_1h) > 0.05",
+                        "description": "1h波动率超过5%，风险过高",
+                        "fields": [
+                            "ATR_1h",
+                            "Price_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(FundingRate) > 0.03 || current(FundingRate) < -0.03",
+                        "description": "资金费率绝对值超过3%，市场情绪极端",
+                        "fields": [
+                            "FundingRate"
+                        ]
+                    },
+                    {
+                        "expression": "current(RSI_4h) > 85 || current(RSI_4h) < 15",
+                        "description": "4h RSI极度超买或超卖，反转风险大",
+                        "fields": [
+                            "RSI_4h"
+                        ]
+                    },
+                    {
+                        "expression": "slope(OI) < -0.1 && current(BuyVol) < current(SellVol) * 0.7",
+                        "description": "持仓量快速下降且卖压显著",
+                        "fields": [
+                            "OI",
+                            "BuyVol",
+                            "SellVol"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 6,
+            "name": "均线多头排列动量策略",
+            "description": "基于多周期EMA20均线系统排列，结合成交量放量的趋势确认策略",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.79,
+            "group": {
+                "logical": "and",
+                "expressions": [
+                    {
+                        "expression": "current(EMA20_3m) > current(EMA20_15m) && current(EMA20_15m) > current(EMA20_1h) && current(EMA20_1h) > current(EMA20_4h)",
+                        "description": "多周期均线多头排列：3m>15m>1h>4h，形成完美趋势结构",
+                        "fields": [
+                            "EMA20_3m",
+                            "EMA20_15m",
+                            "EMA20_1h",
+                            "EMA20_4h"
+                        ]
+                    },
+                    {
+                        "expression": "current(Price_1h) > current(EMA20_1h) && slope(Price_1h) > 0",
+                        "description": "1h级别价格在均线上方且斜率向上",
+                        "fields": [
+                            "Price_1h",
+                            "EMA20_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(VOL_15m) > avg(VOL_15m) * 1.3 && current(BuyVol) > current(SellVol) * 1.5",
+                        "description": "成交量放大确认，买盘力量显著",
+                        "fields": [
+                            "VOL_15m",
+                            "BuyVol",
+                            "SellVol"
+                        ]
+                    },
+                    {
+                        "expression": "current(RSI_1h) < 65 && current(CCI_1h) > 0",
+                        "description": "动量健康：RSI未超买，CCI处于强势区间",
+                        "fields": [
+                            "RSI_1h",
+                            "CCI_1h"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 7,
+            "name": "MACD柱状线背离策略",
+            "description": "捕捉MACD柱状线与价格背离的精准反转信号",
+            "enabled": true,
+            "side": "sell",
+            "confidence": 0.76,
+            "group": {
+                "logical": "and",
+                "expressions": [
+                    {
+                        "expression": "newHigh(Price_4h, 8) && !newHigh(MACDHist_4h, 8) && current(MACDHist_4h) < prev(MACDHist_4h)",
+                        "description": "4h顶背离：价格创新高但MACD柱状线未创新高且开始下降",
+                        "fields": [
+                            "Price_4h",
+                            "MACDHist_4h"
+                        ]
+                    },
+                    {
+                        "expression": "current(RSI_1h) > 70 && slope(RSI_1h) < 0",
+                        "description": "1h RSI超买且开始拐头向下",
+                        "fields": [
+                            "RSI_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(CMF_1h) < 0 && current(OBV_1h) < prev(OBV_1h)",
+                        "description": "资金流向转负：CMF为负，OBV开始下降",
+                        "fields": [
+                            "CMF_1h",
+                            "OBV_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(Price_15m) < current(EMA20_15m) && current(MACD_15m) < current(MACDSignal_15m)",
+                        "description": "15m确认转弱：价格跌破均线，MACD死叉",
+                        "fields": [
+                            "Price_15m",
+                            "EMA20_15m",
+                            "MACD_15m",
+                            "MACDSignal_15m"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 8,
+            "name": "威廉指标超卖反弹策略",
+            "description": "利用威廉指标深度超卖区域的反弹机会，结合成交量确认",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.71,
+            "group": {
+                "logical": "and",
+                "expressions": [
+                    {
+                        "expression": "current(WR_4h) < -90 && current(WR_1h) < -85",
+                        "description": "多周期威廉指标深度超卖：4h<-90，1h<-85",
+                        "fields": [
+                            "WR_4h",
+                            "WR_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(Price_4h) < current(BOLLLow_4h) * 1.02 && current(Price_1h) > current(BOLLLow_1h)",
+                        "description": "4h触及布林下轨，1h开始脱离下轨",
+                        "fields": [
+                            "Price_4h",
+                            "BOLLLow_4h",
+                            "Price_1h",
+                            "BOLLLow_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(VOL_1h) > avg(VOL_1h) * 1.8 && current(BuyVol) > prev(BuyVol) * 2",
+                        "description": "成交量急剧放大，买盘突然增强",
+                        "fields": [
+                            "VOL_1h",
+                            "BuyVol"
+                        ]
+                    },
+                    {
+                        "expression": "current(RSI_15m) > 30 && slope(RSI_15m) > 0.5",
+                        "description": "15m RSI开始快速回升",
+                        "fields": [
+                            "RSI_15m"
+                        ]
+                    },
+                    {
+                        "expression": "current(FundingRate) > -0.02",
+                        "description": "资金费率不过于负面，避免极端空头市场",
+                        "fields": [
+                            "FundingRate"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 9,
+            "name": "成交量突破确认策略",
+            "description": "基于异常成交量突破的关键价位交易策略",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.83,
+            "group": {
+                "logical": "and",
+                "expressions": [
+                    {
+                        "expression": "current(VOL_1h) > high(VOL_1h) * 0.9 && current(VOL_15m) > avg(VOL_15m) * 2.5",
+                        "description": "成交量异常放大：1h接近历史高点，15m达到平均2.5倍",
+                        "fields": [
+                            "VOL_1h",
+                            "VOL_15m"
+                        ]
+                    },
+                    {
+                        "expression": "current(Price_1h) > high(Price_1h) && current(OBV_1h) > high(OBV_1h)",
+                        "description": "价格与OBV同步创新高，真实突破确认",
+                        "fields": [
+                            "Price_1h",
+                            "OBV_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(CMF_1h) > 0.1 && slope(CMF_1h) > 0",
+                        "description": "资金流入强劲且持续增强",
+                        "fields": [
+                            "CMF_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(RSI_1h) < 75 && current(ATR_1h) / current(Price_1h) < 0.025",
+                        "description": "风险控制：RSI未极端超买，波动率可控",
+                        "fields": [
+                            "RSI_1h",
+                            "ATR_1h",
+                            "Price_1h"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 10,
+            "name": "三角收敛末端突破策略",
+            "description": "捕捉技术形态三角形收敛末端的突破机会",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.74,
+            "group": {
+                "logical": "and",
+                "expressions": [
+                    {
+                        "expression": "(high(BOLLUp_4h) - low(BOLLLow_4h)) / current(BOLLMid_4h) < 0.035 && slope(BOLLUp_4h) < 0.001 && slope(BOLLLow_4h) > -0.001",
+                        "description": "4h布林带极度收敛，上下轨近乎平行，波动率压缩",
+                        "fields": [
+                            "BOLLUp_4h",
+                            "BOLLLow_4h",
+                            "BOLLMid_4h"
+                        ]
+                    },
+                    {
+                        "expression": "current(ATR_4h) / current(Price_4h) < 0.02 && current(ATR_1h) < avg(ATR_1h) * 0.7",
+                        "description": "多周期波动率处于极低水平",
+                        "fields": [
+                            "ATR_4h",
+                            "Price_4h",
+                            "ATR_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(Price_1h) > current(BOLLUp_1h) && current(VOL_1h) > avg(VOL_1h) * 2",
+                        "description": "1h突破上轨，成交量显著放大",
+                        "fields": [
+                            "Price_1h",
+                            "BOLLUp_1h",
+                            "VOL_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(MACD_1h) > current(MACDSignal_1h) && current(MACDHist_1h) > prev(MACDHist_1h)",
+                        "description": "MACD金叉确认，柱状线增强",
+                        "fields": [
+                            "MACD_1h",
+                            "MACDSignal_1h",
+                            "MACDHist_1h"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 11,
+            "name": "CMF资金流领先策略",
+            "description": "基于CMF资金流指标领先价格变动的预判策略",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.77,
+            "group": {
+                "logical": "and",
+                "expressions": [
+                    {
+                        "expression": "current(CMF_4h) > 0.15 && slope(CMF_4h) > 0.01",
+                        "description": "4h CMF强势正值且持续上升，资金大幅流入",
+                        "fields": [
+                            "CMF_4h"
+                        ]
+                    },
+                    {
+                        "expression": "current(CMF_1h) > current(CMF_4h) && current(CMF_15m) > current(CMF_1h)",
+                        "description": "多周期CMF共振向上：15m>1h>4h",
+                        "fields": [
+                            "CMF_1h",
+                            "CMF_15m",
+                            "CMF_4h"
+                        ]
+                    },
+                    {
+                        "expression": "current(Price_4h) < high(Price_4h) * 0.98 && current(OBV_4h) > high(OBV_4h)",
+                        "description": "价格未创新高但OBV已创新高，资金领先价格",
+                        "fields": [
+                            "Price_4h",
+                            "OBV_4h"
+                        ]
+                    },
+                    {
+                        "expression": "current(RSI_1h) < 60 && current(CCI_1h) > 100",
+                        "description": "动量健康：RSI有上升空间，CCI进入强势区",
+                        "fields": [
+                            "RSI_1h",
+                            "CCI_1h"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 12,
+            "name": "多时间框架RSI共振策略",
+            "description": "利用多周期RSI指标在同一时间达到超卖区域的反弹机会",
+            "enabled": true,
+            "side": "buy",
+            "confidence": 0.72,
+            "group": {
+                "logical": "and",
+                "expressions": [
+                    {
+                        "expression": "current(RSI_4h) < 35 && current(RSI_1h) < 30 && current(RSI_15m) < 25",
+                        "description": "多周期RSI同步超卖：4h<35, 1h<30, 15m<25",
+                        "fields": [
+                            "RSI_4h",
+                            "RSI_1h",
+                            "RSI_15m"
+                        ]
+                    },
+                    {
+                        "expression": "slope(RSI_15m) > 1 && slope(RSI_1h) > 0.3",
+                        "description": "RSI开始快速回升，短周期领先长周期",
+                        "fields": [
+                            "RSI_15m",
+                            "RSI_1h"
+                        ]
+                    },
+                    {
+                        "expression": "current(Price_15m) > current(EMA20_15m) && current(MACD_15m) > prev(MACD_15m)",
+                        "description": "15m技术面转强：价格上穿均线，MACD改善",
+                        "fields": [
+                            "Price_15m",
+                            "EMA20_15m",
+                            "MACD_15m"
+                        ]
+                    },
+                    {
+                        "expression": "current(CMF_15m) > 0 && current(BuyVol) > current(SellVol)",
+                        "description": "资金流向转正，买盘占优",
+                        "fields": [
+                            "CMF_15m",
+                            "BuyVol",
+                            "SellVol"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": 13,
+            "name": "趋势加速预警策略",
+            "description": "识别趋势加速阶段的预警信号，避免追高风险",
+            "enabled": true,
+            "side": "warning",
+            "confidence": 0.81,
+            "group": {
+                "logical": "or",
+                "expressions": [
+                    {
+                        "expression": "current(RSI_1h) > 80 && current(Price_1h) > current(BOLLUp_1h) * 1.05",
+                        "description": "1h极度超买：RSI>80，价格远超布林上轨",
+                        "fields": [
+                            "RSI_1h",
+                            "Price_1h",
+                            "BOLLUp_1h"
+                        ]
+                    },
+                    {
+                        "expression": "slope(Price_4h) > slope(Price_4h) * 2 && current(ATR_4h) > avg(ATR_4h) * 1.8",
+                        "description": "4h趋势加速斜率翻倍，波动率急剧放大",
+                        "fields": [
+                            "Price_4h",
+                            "ATR_4h"
+                        ]
+                    },
+                    {
+                        "expression": "current(FundingRate) > 0.05 && current(OI) > high(OI) * 0.95",
+                        "description": "资金费率过高，持仓量接近历史高点",
+                        "fields": [
+                            "FundingRate",
+                            "OI"
+                        ]
+                    },
+                    {
+                        "expression": "current(CMF_4h) < -0.1 && current(Price_4h) > prev(Price_4h)",
+                        "description": "价格创新高但资金大幅流出，顶背离预警",
+                        "fields": [
+                            "CMF_4h",
+                            "Price_4h"
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}

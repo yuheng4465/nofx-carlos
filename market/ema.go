@@ -70,28 +70,6 @@ func getEMADataString(emaData []*EMAData, period int) string {
 	return jsonString
 }
 
-// 获取策略所需数据
-func getEMACases(emaData []*EMAData, lookback int) *Cases {
-	if len(emaData) < lookback+1 {
-		return &Cases{}
-	}
-	current := emaData[len(emaData)-1]
-	prev := emaData[len(emaData)-2]
-
-	casesData := &Cases{}
-	casesData.Name = TargetMACD
-	casesData.Metrics = map[string]interface{}{
-		"currentEMA20":    current.EMA20,
-		"prevEMA20":       prev.EMA20,
-		"currentPrice":    current.ClosePrice,
-		"prevPrice":       prev.ClosePrice,
-		"currentEMASlope": current.EMASlope,
-		"prevEMASlope":    prev.EMASlope,
-	}
-
-	return casesData
-}
-
 // analyzeEMASignal 分析EMA20数据，生成交易信号
 func analyzeEMASignal(emaData []*EMAData, lookback int, period string) *Signal {
 	if len(emaData) < lookback+1 {

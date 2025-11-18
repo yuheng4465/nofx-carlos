@@ -241,7 +241,7 @@ func main() {
 	}
 
 	// 强制指定币种
-	// defaultCoins = []string{"BTCUSDT", "ETHUSDT"}
+	defaultCoins = []string{"BTCUSDT", "ETHUSDT"}
 
 	pool.SetDefaultCoins(defaultCoins)
 	// 设置是否使用默认主流币种

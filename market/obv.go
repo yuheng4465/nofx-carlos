@@ -4,6 +4,14 @@ import (
 	"math"
 )
 
+// OBVData 存储成交量数据点
+type OBVData struct {
+	OpenTime   int64
+	ClosePrice float64
+	Volume     float64
+	OBV        float64
+}
+
 // CalculateOBV 计算能量潮
 func calculateOBV(klines []Kline) []*OBVData {
 	// 检查输入数据是否有效

@@ -131,49 +131,213 @@ func GetFullDecisionWithCustomPrompt(ctx *Context, mcpClient *mcp.Client, custom
 		return nil, fmt.Errorf("获取市场数据失败: %w", err)
 	}
 
-	// 2. 提取夏普比率
+	// 2. 执行决策
+	decision := execStrategy(ctx)
+
+	// 3. 提取夏普比率
 	sharpeRatio := extractSharpeRatio(ctx.Performance)
 
-	// 3. 构建 System Prompt（固定规则）和 User Prompt（动态数据）
+	// 4. 构建 System Prompt（固定规则）和 User Prompt（动态数据）
 	systemPrompt := buildSystemPromptWithCustom(ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage, sharpeRatio, customPrompt, overrideBase, templateName)
 	userPrompt := buildUserPrompt(ctx)
 	/////////////////////////////////////////////////////////////////////////
-	var Decisions = []Decision{}
-	return &FullDecision{
-		CoTTrace:     "",
-		Decisions:    Decisions,
-		Timestamp:    time.Now(),
-		SystemPrompt: systemPrompt,
-		UserPrompt:   userPrompt,
-	}, nil
+	// var Decisions = []Decision{}
+	// return &FullDecision{
+	// 	CoTTrace:     "",
+	// 	Decisions:    Decisions,
+	// 	Timestamp:    time.Now(),
+	// 	SystemPrompt: systemPrompt,
+	// 	UserPrompt:   userPrompt,
+	// }, nil
 	////////////////////////////////////////////////////////////////////////
 
-	// 3. 调用AI API（使用 system + user prompt）
-	// aiCallStart := time.Now()
+	// 4. 调用AI API（使用 system + user prompt）
 	// aiResponse, err := mcpClient.CallWithMessages(systemPrompt, userPrompt)
-	// aiCallDuration := time.Since(aiCallStart)
 	// if err != nil {
 	// 	return nil, fmt.Errorf("调用AI API失败: %w", err)
 	// }
 
-	// 4. 解析AI响应
+	// 5. 解析AI响应
 	// decision, err := parseFullDecisionResponse(aiResponse, ctx.Account.TotalEquity, ctx.BTCETHLeverage, ctx.AltcoinLeverage)
-
-	// // 无论是否有错误，都要保存 SystemPrompt 和 UserPrompt（用于调试和决策未执行后的问题定位）
-	// if decision != nil {
-	// 	decision.Timestamp = time.Now()
-	// 	decision.SystemPrompt = systemPrompt // 保存系统prompt
-	// 	decision.UserPrompt = userPrompt     // 保存输入prompt
-	// }
-
 	// if err != nil {
 	// 	return decision, fmt.Errorf("解析AI响应失败: %w", err)
 	// }
 
-	// decision.Timestamp = time.Now()
-	// decision.SystemPrompt = systemPrompt // 保存系统prompt
-	// decision.UserPrompt = userPrompt     // 保存输入prompt
-	// return decision, nil
+	decision.Timestamp = time.Now()
+	decision.SystemPrompt = systemPrompt // 保存系统prompt
+	decision.UserPrompt = userPrompt     // 保存输入prompt
+	return decision, nil
+}
+
+// 执行决策判断方向
+func execStrategy(ctx *Context) *FullDecision {
+	// 执行决策
+	var decisions = []Decision{}
+	// 创建决策引擎
+	engine := market.NewDecisionEngine()
+	if err := engine.LoadConfig("./strategies/default-1.json"); err != nil {
+		return &FullDecision{
+			CoTTrace:  fmt.Errorf("决策配置文件加载失败: %v", err).Error(),
+			Decisions: decisions,
+		}
+	}
+
+	var sb strings.Builder
+	for _, coin := range ctx.CandidateCoins {
+		if marketData, ok := ctx.MarketDataMap[coin.Symbol]; ok {
+			signal, err := market.ComprehensiveAnalysis(engine, marketData)
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("%s决策失败: %s\n", coin.Symbol, err.Error()))
+				decisions = append(decisions, Decision{
+					Action:    "wait",
+					Symbol:    coin.Symbol,
+					Reasoning: fmt.Errorf("%s 决策失败: %w", coin.Symbol, err).Error(),
+				})
+				continue
+			}
+			ctx.MarketDataMap[coin.Symbol].Signal = signal
+
+			// 记录思维链
+			sb.WriteString(fmt.Sprintf("%s 综合决策：%s (%.1f), %s\n", coin.Symbol, signal.Side, signal.Confidence, signal.Message))
+
+			// 无方向
+			if signal.Side == "none" {
+				decisions = append(decisions, Decision{
+					Action:    "wait",
+					Symbol:    coin.Symbol,
+					Reasoning: signal.Message,
+				})
+				continue
+			}
+
+			// 当前价格
+			currentPrice, err := market.GetLastPrice(coin.Symbol)
+			if err != nil {
+				decisions = append(decisions, Decision{
+					Action:    "wait",
+					Symbol:    coin.Symbol,
+					Reasoning: fmt.Errorf("%s 决策获取价格失败: %w", coin.Symbol, err).Error(),
+				})
+				continue
+			}
+
+			// 开多
+			if signal.Side == "buy" {
+				// 判断是否持仓
+				if len(ctx.Positions) > 0 {
+					for _, pos := range ctx.Positions {
+						if pos.Symbol == coin.Symbol {
+							if strings.ToLower(pos.Side) == signal.Side {
+								decisions = append(decisions, Decision{
+									Action:    "hold",
+									Symbol:    coin.Symbol,
+									Reasoning: fmt.Sprintf("%s, 继续持有", signal.Message),
+								})
+							} else {
+								// 方向反转
+								if signal.Confidence > 0.8 {
+									decisions = append(decisions, Decision{
+										Action:    "close_long",
+										Symbol:    coin.Symbol,
+										Reasoning: fmt.Sprintf("%s, 反向情绪过高，提前平仓避免更大损失", signal.Message),
+									})
+								} else {
+									decisions = append(decisions, Decision{
+										Action:    "hold",
+										Symbol:    coin.Symbol,
+										Reasoning: fmt.Sprintf("%s, 仍然坚持持有", signal.Message),
+									})
+								}
+							}
+						}
+					}
+				} else {
+					// 计算止盈止损价格
+					var atr14 float64
+					if len(marketData.IntradaySeries.ATR) > 0 {
+						atr14 = marketData.IntradaySeries.ATR[len(marketData.IntradaySeries.ATR)-1]
+					}
+					stopPrice := currentPrice - atr14*1
+					takeProfit := currentPrice + atr14*2
+					positionSizeUSD := ctx.Account.TotalEquity * float64(ctx.AltcoinLeverage) * signal.Confidence * 0.8
+					// 开多仓
+					decisions = append(decisions, Decision{
+						Action:          "open_long",
+						Symbol:          coin.Symbol,
+						Leverage:        ctx.AltcoinLeverage,
+						PositionSizeUSD: positionSizeUSD, // 仓位保证金
+						StopLoss:        stopPrice,       // 止损价
+						TakeProfit:      takeProfit,      // 止盈价
+						Reasoning:       signal.Message,
+					})
+				}
+			}
+
+			// 开空
+			if signal.Side == "sell" {
+				// 判断是否持仓
+				if len(ctx.Positions) > 0 {
+					for _, pos := range ctx.Positions {
+						if pos.Symbol == coin.Symbol {
+							if strings.ToLower(pos.Side) == signal.Side {
+								decisions = append(decisions, Decision{
+									Action:    "hold",
+									Symbol:    coin.Symbol,
+									Reasoning: fmt.Sprintf("%s, 继续持有", signal.Message),
+								})
+							} else {
+								// 方向反转
+								if signal.Confidence > 0.8 {
+									decisions = append(decisions, Decision{
+										Action:    "close_short",
+										Symbol:    coin.Symbol,
+										Reasoning: fmt.Sprintf("%s, 反向情绪过高，提前平仓避免更大损失", signal.Message),
+									})
+								} else {
+									decisions = append(decisions, Decision{
+										Action:    "hold",
+										Symbol:    coin.Symbol,
+										Reasoning: fmt.Sprintf("%s, 仍然坚持持有", signal.Message),
+									})
+								}
+							}
+						}
+					}
+				} else {
+					// 计算止盈止损价格
+					var atr14 float64
+					if len(marketData.IntradaySeries.ATR) > 0 {
+						atr14 = marketData.IntradaySeries.ATR[len(marketData.IntradaySeries.ATR)-1]
+					}
+					stopPrice := currentPrice + atr14*1
+					takeProfit := currentPrice - atr14*2
+					positionSizeUSD := ctx.Account.TotalEquity * float64(ctx.AltcoinLeverage) * signal.Confidence * 0.8
+					// 开空仓
+					decisions = append(decisions, Decision{
+						Action:          "open_short",
+						Symbol:          coin.Symbol,
+						Leverage:        ctx.AltcoinLeverage,
+						PositionSizeUSD: positionSizeUSD, // 仓位保证金
+						StopLoss:        stopPrice,       // 止损价
+						TakeProfit:      takeProfit,      // 止盈价
+						Reasoning:       signal.Message,
+					})
+				}
+			}
+		} else {
+			decisions = append(decisions, Decision{
+				Action:    "wait",
+				Symbol:    coin.Symbol,
+				Reasoning: "无市场数据",
+			})
+		}
+
+	}
+
+	return &FullDecision{
+		CoTTrace:  sb.String(),
+		Decisions: decisions,
+	}
 }
 
 // fetchMarketDataForContext 为上下文中的所有币种获取市场数据和OI数据
@@ -209,6 +373,7 @@ func fetchMarketDataForContext(ctx *Context) error {
 		data, err := market.Get(symbol)
 		if err != nil {
 			// 单个币种失败不影响整体，只记录错误
+			fmt.Printf("获取%s市场数据失败: %s", symbol, err)
 			continue
 		}
 
@@ -602,7 +767,7 @@ func buildUserPrompt(ctx *Context) string {
 }
 
 // parseFullDecisionResponse 解析AI的完整决策响应
-func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthLeverage, altcoinLeverage int, positionCount int) (*FullDecision, error) {
+func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthLeverage, altcoinLeverage int) (*FullDecision, error) {
 	// 1. 提取思维链
 	cotTrace := extractCoTTrace(aiResponse)
 
@@ -616,7 +781,7 @@ func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthL
 	}
 
 	// 3. 验证决策
-	if err := validateDecisions(decisions, accountEquity, btcEthLeverage, altcoinLeverage, positionCount); err != nil {
+	if err := validateDecisions(decisions, accountEquity, btcEthLeverage, altcoinLeverage); err != nil {
 		return &FullDecision{
 			CoTTrace:  cotTrace,
 			Decisions: decisions,
@@ -815,7 +980,7 @@ func compactArrayOpen(s string) string {
 }
 
 // validateDecisions 验证所有决策（需要账户信息和杠杆配置）
-func validateDecisions(decisions []Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, positionCount int) error {
+func validateDecisions(decisions []Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int) error {
 	// for i, decision := range decisions {
 	// if err := validateDecision(&decision, accountEquity, btcEthLeverage, altcoinLeverage, positionCount); err != nil {
 	// 	return fmt.Errorf("决策 #%d 验证失败: %w", i+1, err)
@@ -823,7 +988,7 @@ func validateDecisions(decisions []Decision, accountEquity float64, btcEthLevera
 
 	var validationErrors []string
 	for i := range decisions {
-		if err := validateDecision(&decisions[i], accountEquity, btcEthLeverage, altcoinLeverage, positionCount); err != nil {
+		if err := validateDecision(&decisions[i], accountEquity, btcEthLeverage, altcoinLeverage); err != nil {
 			// 验证失败时，移除action字段并在reasoning中追加原因
 			validationErrors = append(validationErrors, fmt.Sprintf("决策 #%d: %s", i+1, err.Error()))
 
@@ -870,7 +1035,7 @@ func findMatchingBracket(s string, start int) int {
 }
 
 // validateDecision 验证单个决策的有效性
-func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, positionCount int) error {
+func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int) error {
 	// 验证action
 	validActions := map[string]bool{
 		"open_long":          true,
@@ -911,9 +1076,6 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 
 	// 开仓操作必须提供完整参数
 	if d.Action == "open_long" || d.Action == "open_short" {
-		if positionCount >= 3 {
-			return fmt.Errorf("最多同时开%d仓位", positionCount)
-		}
 		// 根据币种使用配置的杠杆上限
 		maxLeverage := altcoinLeverage          // 山寨币使用配置的杠杆
 		maxPositionValue := accountEquity * 1.5 // 山寨币最多1.5倍账户净值

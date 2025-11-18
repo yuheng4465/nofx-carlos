@@ -91,38 +91,6 @@ func getRSIDataString(rsiData []*RSIData, period int) string {
 	return jsonString
 }
 
-// 获取策略所需数据
-func getRSICases(rsiData []*RSIData, lookback int) *Cases {
-	if len(rsiData) < lookback+1 {
-		return &Cases{}
-	}
-	current := rsiData[len(rsiData)-1]
-	prev := rsiData[len(rsiData)-2]
-
-	// 背离数据
-	recentPriceLow, prevPriceLow, recentRSILow, prevRSILow := detectBullishDivergenceData(rsiData, lookback)
-	recentPriceHigh, prevPriceHigh, recentRSIHigh, prevRSIHigh := detectBearishDivergenceData(rsiData, lookback)
-
-	casesData := &Cases{}
-	casesData.Name = TargetMACD
-	casesData.Metrics = map[string]interface{}{
-		"currentRSI":      current.RSI,
-		"prevRSI":         prev.RSI,
-		"currentPrice":    current.ClosePrice,
-		"prevPrice":       prev.ClosePrice,
-		"recentPriceLow":  recentPriceLow,
-		"prevPriceLow":    prevPriceLow,
-		"recentRSILow":    recentRSILow,
-		"prevRSILow":      prevRSILow,
-		"recentPriceHigh": recentPriceHigh,
-		"prevPriceHigh":   prevPriceHigh,
-		"recentRSIHigh":   recentRSIHigh,
-		"prevRSIHigh":     prevRSIHigh,
-	}
-
-	return casesData
-}
-
 // detectBullishDivergence 检测看多背离 (价格新低，RSI更高低点)
 func detectBullishDivergenceData(rsiData []*RSIData, lookback int) (float64, float64, float64, float64) {
 	if len(rsiData) < lookback {

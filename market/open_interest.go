@@ -1,5 +1,13 @@
 package market
 
+// OIData Open Interest数据
+type OIData struct {
+	Symbol       string  `json:"symbol"`
+	Timestamp    int64   `json:"timestamp"`
+	OpenInterest float64 `json:"openInterest"`
+	Price        float64 `json:"price"`
+}
+
 // OISignal 存储OI分析信号
 type OISignal struct {
 	SignalType string
@@ -8,22 +16,18 @@ type OISignal struct {
 }
 
 // 获取策略所需数据
-func getOICases(oiData []*OIData, priceData []Kline) *Cases {
-	if len(oiData) < 2 || len(priceData) < 2 {
-		return &Cases{}
+func getOICases(oiData []*OIData) *StrategyData {
+	if len(oiData) < 2 {
+		return &StrategyData{}
 	}
 	currentOI := oiData[len(oiData)-1]
 	prevOI := oiData[len(oiData)-2]
-	currentPrice := priceData[len(oiData)-1]
-	prevPrice := priceData[len(oiData)-2]
 
-	casesData := &Cases{}
+	casesData := &StrategyData{}
 	casesData.Name = TargetMACD
 	casesData.Metrics = map[string]interface{}{
-		"currentPrice": currentPrice.Close,
-		"prevPrice":    prevPrice.Close,
-		"currentOI":    currentOI.OpenInterest,
-		"prevOI":       prevOI.OpenInterest,
+		"currentOI": currentOI.OpenInterest,
+		"prevOI":    prevOI.OpenInterest,
 	}
 
 	return casesData
@@ -121,6 +125,31 @@ func fetchOIData(symbol string, peroid string, limit int) ([]*OIData, error) {
 	oiHistoryData = append(oiHistoryData, oiData)
 
 	return oiHistoryData, nil
+}
+
+func getOIList(oiData []*OIData, period int) []float64 {
+	var data, newData []float64
+	i := 0
+	for _, v := range oiData {
+		if v == nil {
+			// fmt.Printf("Warning: oiData[%d] is nil, skipping.\n", i)
+			continue
+		}
+		data = append(data, v.OpenInterest)
+		i++
+	}
+
+	// 取尾部数据
+	startIndex := len(data) - period
+	if startIndex < 0 {
+		startIndex = 0 // 如果数据不足10条，则从0开始取
+	}
+	lastData := data[startIndex:]
+	for _, v := range lastData {
+		newData = append(data, v)
+	}
+
+	return newData
 }
 
 // 转换为字符串

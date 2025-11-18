@@ -37,7 +37,7 @@ func NewCombinedStreamsClient(batchSize int) *CombinedStreamsClient {
 }
 
 func (c *CombinedStreamsClient) Connect() error {
-	proxy, err := url.Parse("http://127.0.0.1:8800")
+	proxy, err := url.Parse("http://127.0.0.1:8801")
 	if err != nil {
 		log.Fatal(err)
 	}
